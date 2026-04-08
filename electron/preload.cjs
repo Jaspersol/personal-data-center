@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld("backupApi", {
   runBackup: (payload) => ipcRenderer.invoke("backup:run", payload),
   openPath: (targetPath) => ipcRenderer.invoke("backup:open-path", targetPath),
   openSettings: () => ipcRenderer.invoke("backup:open-settings"),
+  readLog: () => ipcRenderer.invoke("backup:read-log"),
 });

@@ -221,11 +221,23 @@ function createBackupService({ settingsFile, logsDir }) {
     };
   }
 
+  async function readBackupLog() {
+    const dir = logsDir || path.join(path.dirname(settingsFile), "logs");
+    const logPath = path.join(dir, `backup-${formatDate()}.log`);
+    try {
+      const content = await fs.readFile(logPath, "utf-8");
+      return content;
+    } catch (error) {
+      return "暂无日志文件";
+    }
+  }
+
   return {
     loadSettings,
     saveSettings,
     runBackup,
     listDirectoryTree,
+    readBackupLog,
   };
 }
 

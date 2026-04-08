@@ -76,6 +76,8 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle("backup:read-log", async () => service.readBackupLog());
+
   Menu.setApplicationMenu(null);
   createMainWindow();
 });

@@ -17,6 +17,7 @@ const state = reactive({
   backupResult: null,
   loading: false,
   message: "",
+  logContent: "",
 });
 
 const hasApi = computed(() => typeof window !== "undefined" && !!window.backupApi);
@@ -81,6 +82,15 @@ function getSelectedSources() {
     .map((item) => ({ name: item.name, path: item.path }));
 }
 
+async function readLog() {
+  if (!hasApi.value) return;
+  try {
+    state.logContent = await window.backupApi.readLog();
+  } catch (error) {
+    setMessage("读取日志失败");
+  }
+}
+
 async function runBackup() {
   if (!hasApi.value) return;
   const selectedSources = getSelectedSources();
@@ -96,6 +106,7 @@ async function runBackup() {
     });
     state.backupResult = result;
     setMessage(`备份完成：成功 ${result.successCount}，失败 ${result.failedCount}`);
+    await readLog();
   } catch (error) {
     setMessage(error.message || "备份失败");
   } finally {
@@ -127,6 +138,7 @@ let unsubscribeSettings = () => {};
 onMounted(async () => {
   unsubscribeSettings = subscribeSettingsChanges(loadSettings);
   await loadSettings();
+  await readLog();
   if (!hasApi.value) setMessage("当前不是 Electron 环境，请使用 npm run dev 启动客户端。");
 });
 
@@ -198,6 +210,10 @@ onUnmounted(() => unsubscribeSettings());
               </li>
             </ul>
           </div>
+          <h4>备份日志</h4>
+          <div class="log-container">
+            <pre class="log-content">{{ state.logContent }}</pre>
+          </div>
         </section>
       </template>
     </main>
@@ -227,4 +243,10 @@ button.active { background: #2563eb; color: #fff; }
 .inline-btn { padding: 4px 8px; font-size: 12px; }
 .result { margin-top: 12px; }
 .message { position: fixed; bottom: 8px; right: 12px; color: #0f766e; }
+.log-container {
+  display: flex;
+  width: 800px;
+  height: 300px;
+  overflow: auto;
+}
 </style>
