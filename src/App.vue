@@ -1,6 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive } from "vue";
-import { loadSettingsFromIdb, notifySettingsChanged, saveSettingsToIdb, subscribeSettingsChanges } from "./db/settings-idb.js";
+import {computed, onMounted, onUnmounted, reactive} from "vue";
+import {
+  loadSettingsFromIdb,
+  notifySettingsChanged,
+  saveSettingsToIdb,
+  subscribeSettingsChanges
+} from "./db/settings-idb.js";
 
 function detectPageMode() {
   if (typeof window === "undefined") return "main";
@@ -51,7 +56,7 @@ async function addBackupSource() {
   const folder = await window.backupApi.selectFolder();
   if (!folder) return;
   const name = folder.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).pop() || "备份项";
-  state.backupSources.push({ id: crypto.randomUUID(), name, path: folder });
+  state.backupSources.push({id: crypto.randomUUID(), name, path: folder});
   state.selectedForBackup = state.backupSources.map((s) => s.path);
 }
 
@@ -78,8 +83,8 @@ function removeBackupSource(id) {
 function getSelectedSources() {
   const selectedSet = new Set(state.selectedForBackup);
   return state.backupSources
-    .filter((item) => selectedSet.has(item.path))
-    .map((item) => ({ name: item.name, path: item.path }));
+      .filter((item) => selectedSet.has(item.path))
+      .map((item) => ({name: item.name, path: item.path}));
 }
 
 async function readLog() {
@@ -133,7 +138,8 @@ async function openPath(pathValue) {
   if (errorMessage) setMessage(`打开路径失败: ${errorMessage}`);
 }
 
-let unsubscribeSettings = () => {};
+let unsubscribeSettings = () => {
+};
 
 onMounted(async () => {
   unsubscribeSettings = subscribeSettingsChanges(loadSettings);
@@ -153,7 +159,8 @@ onUnmounted(() => unsubscribeSettings());
     <main class="content" :class="{ 'with-menubar': state.activePage === 'main' }">
       <template v-if="state.activePage === 'settings'">
         <aside class="inner-nav">
-          <button :class="{ active: state.settingsMenu === 'backup' }" @click="state.settingsMenu = 'backup'">备份数据</button>
+          <button :class="{ active: state.settingsMenu === 'backup' }" @click="state.settingsMenu = 'backup'">备份数据
+          </button>
         </aside>
         <section class="panel" v-if="state.settingsMenu === 'backup'">
           <h3>设置 / 备份数据</h3>
@@ -169,7 +176,7 @@ onUnmounted(() => unsubscribeSettings());
           <ul class="folder-list">
             <li v-for="s in state.backupSources" :key="s.id">
               <div class="source-row">
-                <input v-model="s.name" type="text" placeholder="备份名称（必填）" />
+                <input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
                 <code>{{ s.path || "未选择路径" }}</code>
                 <div class="row">
                   <button type="button" @click="pickPathForSource(s)">选择文件夹</button>
@@ -196,7 +203,8 @@ onUnmounted(() => unsubscribeSettings());
           <div class="checkbox-list">
             <p>勾选本次执行备份的源路径:</p>
             <label v-for="s in state.backupSources" :key="s.id">
-              <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)" @change="toggleSelected(s.path)" />
+              <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)"
+                     @change="toggleSelected(s.path)"/>
               <span class="chk-label">{{ s.name }}</span>
               <button type="button" class="inline-btn" @click="openPath(s.path)">打开路径</button>
             </label>
@@ -222,27 +230,139 @@ onUnmounted(() => unsubscribeSettings());
 </template>
 
 <style scoped>
-.page { display: flex; flex-direction: column; min-height: 100%; color: #1f2937; }
-.menubar-strip { height: 28px; display: flex; background: #f3f3f3; border-bottom: 1px solid #d0d0d0; }
-.menubar-item { border: none; background: transparent; padding: 0 14px; font-size: 13px; cursor: pointer; }
-.content { display: flex; flex: 1; min-height: 100vh; }
-.content.with-menubar { min-height: calc(100vh - 28px); }
-.inner-nav { width: 180px; border-right: 1px solid #e5e7eb; padding: 16px; background: #f8fafc; }
-.panel { flex: 1; padding: 18px; }
-button { border: 1px solid #d1d5db; background: #fff; color: #111827; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-button.active { background: #2563eb; color: #fff; }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.folder-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.folder-list li { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
-.source-row { display: flex; flex-direction: column; gap: 8px; }
-.source-row input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
-.source-row code { word-break: break-all; background: #f9fafb; padding: 6px; border-radius: 6px; }
-.checkbox-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.checkbox-list label { display: flex; gap: 8px; align-items: center; }
-.chk-label { min-width: 180px; }
-.inline-btn { padding: 4px 8px; font-size: 12px; }
-.result { margin-top: 12px; }
-.message { position: fixed; bottom: 8px; right: 12px; color: #0f766e; }
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  color: #1f2937;
+}
+
+.menubar-strip {
+  height: 28px;
+  display: flex;
+  background: #f3f3f3;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.menubar-item {
+  border: none;
+  background: transparent;
+  padding: 0 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  min-height: 100vh;
+}
+
+.content.with-menubar {
+  min-height: calc(100vh - 28px);
+}
+
+.inner-nav {
+  width: 180px;
+  border-right: 1px solid #e5e7eb;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.panel {
+  flex: 1;
+  padding: 18px;
+}
+
+button {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.folder-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.folder-list li {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.source-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-row input {
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.source-row code {
+  word-break: break-all;
+  background: #f9fafb;
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.checkbox-list label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chk-label {
+  min-width: 180px;
+}
+
+.inline-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.result {
+  margin-top: 12px;
+}
+
+.message {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  color: #0f766e;
+}
+
 .log-container {
   display: flex;
   width: 800px;
