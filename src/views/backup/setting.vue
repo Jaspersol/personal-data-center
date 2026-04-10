@@ -86,27 +86,35 @@ onUnmounted(() => unsubscribeSettings());
     <el-button @click="saveSettings">保存设置</el-button>
   </div>
   <div class="button-row">
-    <p><strong>备份存放路径:</strong> &nbsp;{{ state.backupDestination || "未设置" }}</p>
+    <div class="load-position"><strong>备份存放路径:</strong>&nbsp;<div>{{ state.backupDestination || "未设置" }}</div></div>
     <el-button size="small" @click="openPath(state.backupDestination)">打开路径</el-button>
   </div>
-  <el-card class="settings-card">
-    <ul class="folder-list">
-      <li v-for="s in state.backupSources" :key="s.id">
-        <div class="source-row">
-          <el-input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
-          <code>{{ s.path || "未选择路径" }}</code>
-          <div class="button-row">
-            <el-button @click="pickPathForSource(s)">选择文件夹</el-button>
-            <el-button @click="openPath(s.path)">打开路径</el-button>
-            <el-button @click="removeBackupSource(s.id)">移除</el-button>
+  <div class="setting-container">
+    <el-card class="settings-card">
+      <ul class="folder-list">
+        <li v-for="s in state.backupSources" :key="s.id">
+          <div class="source-row">
+            <el-input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
+            <code>{{ s.path || "未选择路径" }}</code>
+            <div class="button-row">
+              <el-button @click="pickPathForSource(s)">选择文件夹</el-button>
+              <el-button @click="openPath(s.path)">打开路径</el-button>
+              <el-button @click="removeBackupSource(s.id)">移除</el-button>
+            </div>
           </div>
-        </div>
-      </li>
-    </ul>
-  </el-card>
+        </li>
+      </ul>
+    </el-card>
+  </div>
 </template>
 
 <style scoped>
+.setting-container {
+  display: flex;
+  height: calc(100vh - 150px);
+  overflow: hidden;
+}
+
 .button-row {
   display: flex;
   gap: 8px;
@@ -115,8 +123,26 @@ onUnmounted(() => unsubscribeSettings());
   margin-bottom: 12px;
 }
 
-.settings-card{
-  height: 75vh;
+.load-position {
+  display: flex;
+  white-space: nowrap;
+}
+
+.load-position div {
+  max-width: calc(100vw - 400px);
+  overflow: auto;
+  white-space: nowrap;
+}
+
+.load-position div::-webkit-scrollbar {
+  height: 0;
+}
+
+.settings-card {
+  padding: 10px 0;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow: auto;
 }
 

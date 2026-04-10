@@ -125,8 +125,13 @@ onUnmounted(() => unsubscribeSettings());
 }
 
 .main-container {
+  padding: 10px 0;
   display: flex;
   flex-direction: row;
+  flex: 1;
+  min-width: 0;
+  height: calc(100vh - 80px);
+  overflow: hidden;
 }
 
 .checkbox-container {
@@ -135,7 +140,8 @@ onUnmounted(() => unsubscribeSettings());
 }
 
 .checkbox-card {
-  height: 78vh;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -145,29 +151,32 @@ onUnmounted(() => unsubscribeSettings());
   gap: 8px;
   align-items: center;
 }
+
 .checkbox-card span {
   width: 150px;
   white-space: pre-wrap;
   word-wrap: break-word;
   margin-right: 10px;
 }
+
 .log-container {
   margin-left: 20px;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }
 
 .log-card {
-  padding: 10px 0;
-  width: 630px;
-  height: 78vh;
+  padding: 10px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
 .log-content {
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-x: auto;
 }
 
 </style>

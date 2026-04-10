@@ -15,17 +15,8 @@ function handleSelectMenu(index) {
     >
       <el-menu-item index="/settings/backup-setting">
         <template #title>
-          <el-icon>
-            <location/>
-          </el-icon>
-          <span>备份数据</span>
+          <span class="menu-item">备份数据</span>
         </template>
-      </el-menu-item>
-      <el-menu-item index="">
-        <el-icon>
-          <icon-menu/>
-        </el-icon>
-        <span>Navigator Two</span>
       </el-menu-item>
     </el-menu>
     <div class="view">
@@ -46,5 +37,10 @@ function handleSelectMenu(index) {
   margin: 20px;
   flex: 1;
   overflow: hidden;
+}
+
+.menu-item {
+  min-width: 80px;
+  text-align: center;
 }
 </style>
