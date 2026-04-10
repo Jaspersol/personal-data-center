@@ -80,37 +80,44 @@ onUnmounted(() => unsubscribeSettings());
 </script>
 
 <template>
-  <div class="row">
+  <div class="button-row">
     <el-button @click="addBackupSource">添加被备份项</el-button>
     <el-button @click="chooseDestination">选择备份存放路径</el-button>
     <el-button @click="saveSettings">保存设置</el-button>
   </div>
-  <div class="row">
-    <p><strong>备份存放路径:</strong> {{ state.backupDestination || "未设置" }}</p>
-    <el-button @click="openPath(state.backupDestination)">打开该路径</el-button>
+  <div class="button-row">
+    <p><strong>备份存放路径:</strong> &nbsp;{{ state.backupDestination || "未设置" }}</p>
+    <el-button size="small" @click="openPath(state.backupDestination)">打开路径</el-button>
   </div>
-  <ul class="folder-list">
-    <li v-for="s in state.backupSources" :key="s.id">
-      <div class="source-row">
-        <input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
-        <code>{{ s.path || "未选择路径" }}</code>
-        <div class="row">
-          <el-button @click="pickPathForSource(s)">选择文件夹</el-button>
-          <el-button @click="openPath(s.path)">打开路径</el-button>
-          <el-button @click="removeBackupSource(s.id)">移除</el-button>
+  <el-card class="settings-card">
+    <ul class="folder-list">
+      <li v-for="s in state.backupSources" :key="s.id">
+        <div class="source-row">
+          <el-input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
+          <code>{{ s.path || "未选择路径" }}</code>
+          <div class="button-row">
+            <el-button @click="pickPathForSource(s)">选择文件夹</el-button>
+            <el-button @click="openPath(s.path)">打开路径</el-button>
+            <el-button @click="removeBackupSource(s.id)">移除</el-button>
+          </div>
         </div>
-      </div>
-    </li>
-  </ul>
+      </li>
+    </ul>
+  </el-card>
 </template>
 
 <style scoped>
-.row {
+.button-row {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.settings-card{
+  height: 75vh;
+  overflow: auto;
 }
 
 .folder-list {

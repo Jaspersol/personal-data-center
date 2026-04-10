@@ -90,16 +90,34 @@ export async function saveSettingsToIdb(record) {
     id: SINGLETON_ID,
     backupDestination: typeof record.backupDestination === "string" ? record.backupDestination.trim() : "",
     backupSources: Array.isArray(record.backupSources)
-      ? record.backupSources.map(normalizeSource).filter((s) => s.name && s.path)
-      : [],
+        ? record.backupSources.map(normalizeSource).filter((s) => s.name && s.path)
+        : [],
   };
-  return new Promise((resolve, reject) => {
+
+  // 保存到 IndexedDB
+  const saved = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     const req = store.put(payload);
     req.onsuccess = () => resolve(payload);
     req.onerror = () => reject(req.error);
   });
+
+  // 同时保存到 backup.config.json（仅在Electron环境中）
+  if (typeof window !== "undefined" && window.backupApi) {
+    try {
+      // 通过backupApi保存配置，避免在浏览器环境中使用Node.js模块
+      const configData = {
+        sourceFolders: payload.backupSources.map(s => s.path),
+        backupDestination: payload.backupDestination
+      };
+      await window.backupApi.saveConfig(configData);
+    } catch (error) {
+      console.error("保存到 backup.config.json 失败:", error);
+    }
+  }
+
+  return saved;
 }
 
 const CHANNEL = "pdc-settings";

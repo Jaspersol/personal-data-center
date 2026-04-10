@@ -91,7 +91,6 @@ onUnmounted(() => unsubscribeSettings());
 
 <template>
   <div class="button-row">
-    <el-button @click="loadSettings">刷新配置</el-button>
     <el-button :disabled="state.loading" @click="runBackup">手动执行备份</el-button>
     <el-button @click="openPath(state.backupDestination)">打开备份路径</el-button>
   </div>
@@ -103,7 +102,7 @@ onUnmounted(() => unsubscribeSettings());
           <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)"
                  @change="toggleSelected(s.path)"/>
           <span class="chk-label">{{ s.name }}</span>
-          <el-button class="inline-btn" @click="openPath(s.path)">打开路径</el-button>
+          <el-button size="small" @click="openPath(s.path)">打开路径</el-button>
         </label>
       </el-card>
     </div>
@@ -133,11 +132,10 @@ onUnmounted(() => unsubscribeSettings());
 .checkbox-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .checkbox-card {
-  height: 80vh;
+  height: 78vh;
   overflow: auto;
 }
 
@@ -147,12 +145,12 @@ onUnmounted(() => unsubscribeSettings());
   gap: 8px;
   align-items: center;
 }
-
-.inline-btn {
-  padding: 4px 8px;
-  font-size: 12px;
+.checkbox-card span {
+  width: 150px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-right: 10px;
 }
-
 .log-container {
   margin-left: 20px;
   display: flex;
@@ -161,8 +159,15 @@ onUnmounted(() => unsubscribeSettings());
 
 .log-card {
   padding: 10px 0;
-  width: 610px;
-  height: 80vh;
+  width: 630px;
+  height: 78vh;
   overflow: auto;
 }
+
+.log-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: auto;
+}
+
 </style>

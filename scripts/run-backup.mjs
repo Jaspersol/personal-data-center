@@ -16,18 +16,26 @@ function parseArgs() {
 
 async function main() {
   const configPath = parseArgs();
-  const backupService = createBackupService({ settingsFile: configPath });
+  const backupService = createBackupService({ 
+    settingsFile: configPath,
+    logsDir: path.join(path.dirname(configPath), "logs")
+  });
+  
   const settings = await backupService.loadSettings();
 
   if (!settings.sourceFolders?.length || !settings.backupDestination) {
     throw new Error(`配置文件无效，请检查 ${configPath}`);
   }
 
+  console.log(`开始备份...`);
   const result = await backupService.runBackup({ selectedFolders: settings.sourceFolders });
-  console.log(JSON.stringify(result, null, 2));
+  console.log(`备份结果:`, JSON.stringify(result, null, 2));
+  
   if (result.failedCount > 0) {
     process.exitCode = 1;
   }
+
+  console.log(`备份完成，日志已写入: ${path.join(path.dirname(configPath), "logs")}`);
 }
 
 main().catch((error) => {

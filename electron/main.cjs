@@ -55,8 +55,8 @@ function createSettingsWindow() {
 
 app.whenReady().then(() => {
     const service = createBackupService({
-        settingsFile: path.join(app.getPath("userData"), "backup-settings.json"),
-        logsDir: path.join(app.getPath("userData"), "logs"),
+        settingsFile: path.join(__dirname, "..", "backup.config.json"),
+        logsDir: path.join(__dirname, "..", "logs"),
     });
 
     ipcMain.handle("backup:select-folder", async () => {
@@ -83,10 +83,23 @@ app.whenReady().then(() => {
 
     const template = [
         {
+            label: ''
+        },
+        {
             label: '设置',
             click: () => createSettingsWindow(),
         }
     ]
+
+    ipcMain.handle('save-config', async (event, config) => {
+        try {
+            await service.saveSettings(config);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    
     const menu = Menu.buildFromTemplate(template)
     Menu.setApplicationMenu(menu);
     createMainWindow();

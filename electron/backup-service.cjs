@@ -201,6 +201,7 @@ function createBackupService({settingsFile, logsDir}) {
 
     return {
         loadSettings,
+        saveSettings,
         runBackup,
         readBackupLog,
     };
