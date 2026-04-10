@@ -90,28 +90,34 @@ onUnmounted(() => unsubscribeSettings());
 </script>
 
 <template>
-  <div class="row">
+  <div class="button-row">
     <el-button @click="loadSettings">刷新配置</el-button>
     <el-button :disabled="state.loading" @click="runBackup">手动执行备份</el-button>
     <el-button @click="openPath(state.backupDestination)">打开备份路径</el-button>
   </div>
-  <div class="checkbox-list">
-    <p>勾选本次执行备份的源路径:</p>
-    <label v-for="s in state.backupSources" :key="s.id">
-      <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)"
-             @change="toggleSelected(s.path)"/>
-      <span class="chk-label">{{ s.name }}</span>
-      <el-button class="inline-btn" @click="openPath(s.path)">打开路径</el-button>
-    </label>
-  </div>
-  <h4>备份日志</h4>
-  <div class="log-container">
-    <pre class="log-content">{{ state.logContent }}</pre>
+  <div class="main-container">
+    <div class="checkbox-container">
+      <h4>选择执行备份:</h4>
+      <el-card class="checkbox-card">
+        <label v-for="s in state.backupSources" :key="s.id">
+          <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)"
+                 @change="toggleSelected(s.path)"/>
+          <span class="chk-label">{{ s.name }}</span>
+          <el-button class="inline-btn" @click="openPath(s.path)">打开路径</el-button>
+        </label>
+      </el-card>
+    </div>
+    <div class="log-container">
+      <h4>备份日志</h4>
+      <el-card class="log-card">
+        <pre class="log-content">{{ state.logContent }}</pre>
+      </el-card>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.row {
+.button-row {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -119,40 +125,27 @@ onUnmounted(() => unsubscribeSettings());
   margin-bottom: 12px;
 }
 
-.folder-list li {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 10px;
+.main-container {
+  display: flex;
+  flex-direction: row;
 }
 
-.source-row input {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-}
-
-.source-row code {
-  word-break: break-all;
-  background: #f9fafb;
-  padding: 6px;
-  border-radius: 6px;
-}
-
-.checkbox-list {
+.checkbox-container {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 8px;
 }
 
-.checkbox-list label {
+.checkbox-card {
+  height: 80vh;
+  overflow: auto;
+}
+
+.checkbox-card label {
+  padding: 8px 0;
   display: flex;
   gap: 8px;
   align-items: center;
-}
-
-.chk-label {
-  min-width: 180px;
 }
 
 .inline-btn {
@@ -160,14 +153,16 @@ onUnmounted(() => unsubscribeSettings());
   font-size: 12px;
 }
 
-.result {
-  margin-top: 12px;
+.log-container {
+  margin-left: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
-.log-container {
-  display: flex;
-  width: 800px;
-  height: 300px;
+.log-card {
+  padding: 10px 0;
+  width: 610px;
+  height: 80vh;
   overflow: auto;
 }
 </style>
