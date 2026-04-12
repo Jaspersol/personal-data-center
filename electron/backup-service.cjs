@@ -22,7 +22,7 @@ async function pathExists(targetPath) {
     }
 }
 
-function runRarArchive({sourceFolder, destinationFolder}) {
+function runRarArchive({sourceFolder, destinationFolder, name}) {
     return new Promise((resolve, reject) => {
         const now = new Date();
         const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
@@ -31,7 +31,7 @@ function runRarArchive({sourceFolder, destinationFolder}) {
             2,
             "0",
         )}${String(now.getSeconds()).padStart(2, "0")}`;
-        const safeName = path.basename(sourceFolder).replace(/[^\w\u4e00-\u9fa5\-]/g, "_");
+        const safeName = (name || path.basename(sourceFolder)).replace(/[^\w\u4e00-\u9fa5\-]/g, "_");
         const archivePath = path.join(destinationFolder, `${safeName}_${timestamp}.rar`);
 
         const args = ["a", "-ep1", archivePath, sourceFolder];
@@ -96,7 +96,21 @@ function createBackupService({settingsFile, logsDir}) {
     async function saveSettings(settings) {
         const normalized = {
             sourceFolders: Array.isArray(settings.sourceFolders)
-                ? [...new Set(settings.sourceFolders.filter((item) => typeof item === "string" && item.trim()))]
+                ? [...new Map(settings.sourceFolders
+                    .map((item) => {
+                        if (typeof item === "string" && item.trim()) {
+                            return [item.trim(), item.trim()];
+                        }
+                        if (item && typeof item.path === "string" && item.path.trim()) {
+                            return [item.path.trim(), {
+                                name: typeof item.name === "string" ? item.name.trim() : path.basename(item.path.trim()),
+                                path: item.path.trim()
+                            }];
+                        }
+                        return null;
+                    })
+                    .filter(Boolean))
+                    .values()]
                 : [],
             backupDestination: typeof settings.backupDestination === "string" ? settings.backupDestination.trim() : "",
         };
@@ -125,7 +139,13 @@ function createBackupService({settingsFile, logsDir}) {
             `备份时间: ${formatDateTime(startedAt)}`,
             `备份名称: ${selectedNames.length > 0 ? selectedNames.join(", ") : "无"}`,
             `备份结果: ${failedNames.length > 0 ? `失败(${failedNames.join(", ")})` : "全部成功"}`,
-            `详细结果: ${JSON.stringify(results)}`,
+            `详细结果: ${JSON.stringify(results.map((item) => {
+                if (item.success) {
+                    return `[${item.sourceName} 成功 ${item.archivePath ? item.archivePath.replace(/\\/g, "/") : ""}]`;
+                } else {
+                    return `[${item.sourceName} 失败 ${item.error || "未知错误"}]`;
+                }
+            }))}`,
             "",
         ];
         await fs.appendFile(logPath, lines.join("\n"), "utf-8");
@@ -136,7 +156,10 @@ function createBackupService({settingsFile, logsDir}) {
         const settings = await loadSettings();
         const dest = typeof backupDestination === "string" && backupDestination.trim() ? backupDestination.trim() : settings.backupDestination;
         if (!dest) throw new Error("未设置备份存放路径");
-        await ensureDir(dest);
+        // 创建日期命名的子文件夹
+        const dateFolder = formatDate(startedAt);
+        const backupDir = path.join(dest, dateFolder);
+        await ensureDir(backupDir);
 
         let candidates =
             Array.isArray(selectedSources) && selectedSources.length > 0
@@ -148,10 +171,21 @@ function createBackupService({settingsFile, logsDir}) {
                     .filter((item) => item.path)
                 : [];
         if (!candidates.length) {
-            const fallbackPaths =
-                Array.isArray(selectedFolders) && selectedFolders.length > 0
-                    ? selectedFolders.map((p) => String(p).trim()).filter(Boolean)
-                    : listSourcePaths(settings.sourceFolders);
+            let fallbackPaths = [];
+            if (Array.isArray(selectedFolders) && selectedFolders.length > 0) {
+                // 处理selectedFolders，可能是字符串数组或对象数组
+                fallbackPaths = selectedFolders.map((p) => {
+                    if (typeof p === 'string') {
+                        return p.trim();
+                    }
+                    if (p && typeof p.path === 'string') {
+                        return p.path.trim();
+                    }
+                    return '';
+                }).filter(Boolean);
+            } else {
+                fallbackPaths = listSourcePaths(settings.sourceFolders);
+            }
             candidates = fallbackPaths.map((item) => ({name: path.basename(item), path: item}));
         }
         if (!candidates.length) throw new Error("没有可备份的源文件夹");
@@ -169,7 +203,8 @@ function createBackupService({settingsFile, logsDir}) {
             try {
                 const result = await runRarArchive({
                     sourceFolder,
-                    destinationFolder: dest,
+                    destinationFolder: backupDir,
+                    name: sourceName,
                 });
                 results.push({sourceFolder, sourceName, success: true, archivePath: result.archivePath});
             } catch (error) {
@@ -181,7 +216,7 @@ function createBackupService({settingsFile, logsDir}) {
         await appendBackupLog({startedAt, selectedNames, failedNames, results});
 
         return {
-            destination: dest,
+            destination: backupDir,
             results,
             successCount: results.filter((item) => item.success).length,
             failedCount: results.filter((item) => !item.success).length,

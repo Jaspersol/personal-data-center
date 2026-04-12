@@ -93,6 +93,7 @@ onUnmounted(() => unsubscribeSettings());
   <div class="button-row">
     <el-button :disabled="state.loading" @click="runBackup">手动执行备份</el-button>
     <el-button @click="openPath(state.backupDestination)">打开备份路径</el-button>
+    <el-button @click="readLog">刷新日志</el-button>
   </div>
   <div class="main-container">
     <div class="checkbox-container">

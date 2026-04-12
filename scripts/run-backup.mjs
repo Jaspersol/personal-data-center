@@ -28,7 +28,24 @@ async function main() {
   }
 
   console.log(`开始备份...`);
-  const result = await backupService.runBackup({ selectedFolders: settings.sourceFolders });
+  // 检查sourceFolders的结构，转换为selectedSources格式
+  const sources = Array.isArray(settings.sourceFolders) ? settings.sourceFolders.map(item => {
+    if (typeof item === 'string') {
+      return {
+        name: path.basename(item),
+        path: item
+      };
+    }
+    // 确保name和path属性存在
+    if (item && typeof item.path === 'string') {
+      return {
+        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : path.basename(item.path),
+        path: item.path.trim()
+      };
+    }
+    return null;
+  }).filter(Boolean) : [];
+  const result = await backupService.runBackup({ selectedSources: sources });
   console.log(`备份结果:`, JSON.stringify(result, null, 2));
   
   if (result.failedCount > 0) {

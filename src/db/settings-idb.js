@@ -77,10 +77,11 @@ function normalizeSource(item) {
   if (!item || typeof item.path !== "string" || !item.path.trim()) {
     return { id: item?.id || crypto.randomUUID(), name: "", path: "" };
   }
+  const pathTrimmed = item.path.trim();
   return {
     id: typeof item.id === "string" && item.id ? item.id : crypto.randomUUID(),
-    name: typeof item.name === "string" ? item.name.trim() : "",
-    path: item.path.trim(),
+    name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : pathTrimmed.split(/[/\\]/).filter(Boolean).pop() || pathTrimmed,
+    path: pathTrimmed,
   };
 }
 
@@ -108,7 +109,7 @@ export async function saveSettingsToIdb(record) {
     try {
       // 通过backupApi保存配置，避免在浏览器环境中使用Node.js模块
       const configData = {
-        sourceFolders: payload.backupSources.map(s => s.path),
+        sourceFolders: payload.backupSources.map(s => ({ name: s.name, path: s.path })),
         backupDestination: payload.backupDestination
       };
       await window.backupApi.saveConfig(configData);
