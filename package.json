@@ -1,7 +1,7 @@
 {
   "name": "personal-data-center",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -11,7 +11,11 @@
     "start": "electron .",
     "build:web": "vite build",
     "backup": "node ./scripts/run-backup.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build": "npm run build:web && electron-builder",
+    "build:win": "npm run build:web && electron-builder --win",
+    "build:mac": "npm run build:web && electron-builder --mac",
+    "build:linux": "npm run build:web && electron-builder --linux"
   },
   "dependencies": {
     "element-plus": "^2.13.6",
@@ -20,12 +24,58 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.5",
+    "app-builder-bin": "^5.0.0-alpha.12",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
     "vite": "^8.0.4",
     "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.personal-data-center.app",
+    "productName": "个人数据中心",
+    "copyright": "Copyright © 2026 makabakax",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts",
+        "to": "scripts"
+      },
+      {
+        "from": "backup.config.json",
+        "to": "backup.config.json"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "public/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "public/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "icon": "public/icon.png"
+    }
   }
 }
