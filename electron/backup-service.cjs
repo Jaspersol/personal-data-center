@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
-const {spawn} = require("node:child_process");
+const {spawn, spawnSync} = require("node:child_process");
 
 const DEFAULT_SETTINGS = {
     sourceFolders: [],
@@ -22,17 +23,154 @@ async function pathExists(targetPath) {
     }
 }
 
+let cachedDefaultWslDistroName;
+
+function cleanCommandOutput(output) {
+    if (!output) return "";
+    const buffer = Buffer.isBuffer(output) ? output : Buffer.from(String(output));
+    const utf8 = buffer.toString("utf8").replace(/\0/g, "").trim();
+    if (utf8) return utf8;
+    return buffer.toString("utf16le").replace(/\0/g, "").trim();
+}
+
+function normalizeWslUncPath(targetPath) {
+    if (typeof targetPath !== "string") return "";
+    const trimmed = targetPath.trim();
+    if (/^\/\/(wsl\$|wsl\.localhost)\//i.test(trimmed)) {
+        return trimmed.replace(/\//g, "\\");
+    }
+    return trimmed;
+}
+
+function convertWslMountPath(targetPath) {
+    const match = targetPath.match(/^\/mnt\/([a-z])(?:\/(.*))?$/i);
+    if (!match) return "";
+
+    const drive = match[1].toUpperCase();
+    const rest = (match[2] || "").replace(/\//g, "\\");
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`;
+}
+
+function isLinuxAbsolutePath(targetPath) {
+    return /^\/(?!\/)/.test(targetPath) && !/^\/[a-z]:/i.test(targetPath);
+}
+
+function getDefaultWslDistroName() {
+    if (cachedDefaultWslDistroName !== undefined) {
+        return cachedDefaultWslDistroName;
+    }
+
+    cachedDefaultWslDistroName = "";
+    try {
+        const result = spawnSync("wsl.exe", ["-l", "-q"], {windowsHide: true});
+        if (result.status !== 0) return cachedDefaultWslDistroName;
+
+        const lines = cleanCommandOutput(result.stdout)
+            .split(/\r?\n/)
+            .map((line) => line.replace(/^\*\s*/, "").trim())
+            .filter(Boolean);
+        cachedDefaultWslDistroName = lines[0] || "";
+    } catch {
+        cachedDefaultWslDistroName = "";
+    }
+
+    return cachedDefaultWslDistroName;
+}
+
+function convertLinuxPathWithWslpath(targetPath) {
+    try {
+        const result = spawnSync("wsl.exe", ["wslpath", "-w", targetPath], {windowsHide: true});
+        if (result.status !== 0) return "";
+
+        const converted = cleanCommandOutput(result.stdout).split(/\r?\n/)[0]?.trim();
+        return converted ? normalizeWslUncPath(converted) : "";
+    } catch {
+        return "";
+    }
+}
+
+function resolveFileSystemPath(targetPath) {
+    const normalizedPath = normalizeWslUncPath(targetPath);
+    const mountedWindowsPath = convertWslMountPath(normalizedPath);
+    if (mountedWindowsPath) return mountedWindowsPath;
+
+    if (isLinuxAbsolutePath(normalizedPath)) {
+        const convertedByWsl = convertLinuxPathWithWslpath(normalizedPath);
+        if (convertedByWsl) return convertedByWsl;
+
+        const distroName = getDefaultWslDistroName();
+        if (distroName) {
+            return `\\\\wsl.localhost\\${distroName}${normalizedPath.replace(/\//g, "\\")}`;
+        }
+    }
+
+    return normalizedPath;
+}
+
+function resolveWslSource(targetPath) {
+    const normalizedPath = normalizeWslUncPath(targetPath);
+    const uncMatch = normalizedPath.match(/^\\\\(?:wsl\$|wsl\.localhost)\\([^\\]+)(?:\\(.*))?$/i);
+    if (uncMatch) {
+        return {
+            distroName: uncMatch[1],
+            linuxPath: `/${(uncMatch[2] || "").replace(/\\/g, "/")}`.replace(/\/$/, "") || "/",
+            windowsPath: normalizedPath,
+        };
+    }
+
+    if (isLinuxAbsolutePath(normalizedPath) && !convertWslMountPath(normalizedPath)) {
+        const distroName = getDefaultWslDistroName();
+        if (!distroName) return null;
+        return {
+            distroName,
+            linuxPath: normalizedPath,
+            windowsPath: resolveFileSystemPath(normalizedPath),
+        };
+    }
+
+    return null;
+}
+
+function wslPathExists({distroName, linuxPath}) {
+    const result = spawnSync("wsl.exe", ["-d", distroName, "-u", "root", "--", "test", "-e", linuxPath], {windowsHide: true});
+    return result.status === 0;
+}
+
+function getPathBaseName(targetPath) {
+    const normalizedPath = normalizeWslUncPath(targetPath);
+    return path.basename(normalizedPath) || path.posix.basename(normalizedPath) || normalizedPath;
+}
+
+function createArchiveName({sourceFolder, destinationFolder, name, extension}) {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+        now.getDate(),
+    ).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(
+        2,
+        "0",
+    )}${String(now.getSeconds()).padStart(2, "0")}`;
+    const safeName = (name || getPathBaseName(sourceFolder)).replace(/[^\w\u4e00-\u9fa5\-]/g, "_");
+    return path.join(destinationFolder, `${safeName}_${timestamp}.${extension}`);
+}
+
+function isNonFatalTarWarning(stderr) {
+    const lines = String(stderr || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    return lines.length > 0 && lines.every((line) =>
+        line.includes("file changed as we read it") ||
+        line.includes("socket ignored") ||
+        line.includes("Removing leading") ||
+        line.includes("忽略 socket") ||
+        line.includes("文件在我们读入时发生了变化"),
+    );
+}
+
 function runRarArchive({sourceFolder, destinationFolder, name}) {
     return new Promise((resolve, reject) => {
-        const now = new Date();
-        const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-            now.getDate(),
-        ).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(
-            2,
-            "0",
-        )}${String(now.getSeconds()).padStart(2, "0")}`;
-        const safeName = (name || path.basename(sourceFolder)).replace(/[^\w\u4e00-\u9fa5\-]/g, "_");
-        const archivePath = path.join(destinationFolder, `${safeName}_${timestamp}.rar`);
+        const archivePath = createArchiveName({sourceFolder, destinationFolder, name, extension: "rar"});
 
         const args = ["a", "-ep1", archivePath, sourceFolder];
         const child = spawn("rar", args, {shell: true});
@@ -61,6 +199,64 @@ function runRarArchive({sourceFolder, destinationFolder, name}) {
                     `RAR 压缩失败，退出码 ${code}。请确认已安装 WinRAR/rar 并将 rar 命令加入 PATH。\n${stderr || stdout}`,
                 ),
             );
+        });
+    });
+}
+
+function runWslTarArchive({sourceFolder, destinationFolder, name, wslSource}) {
+    return new Promise((resolve, reject) => {
+        const archivePath = createArchiveName({sourceFolder, destinationFolder, name, extension: "tar.gz"});
+        const archiveWriteStream = fsSync.createWriteStream(archivePath);
+
+        const sourceParent = path.posix.dirname(wslSource.linuxPath);
+        const sourceBase = path.posix.basename(wslSource.linuxPath);
+        const args = [
+            "-d", wslSource.distroName,
+            "-u", "root",
+            "--",
+            "tar",
+            "--ignore-failed-read",
+            "--warning=no-file-changed",
+            "--exclude=*.socket",
+            "-czf", "-",
+            "-C", sourceParent,
+            sourceBase,
+        ];
+        const child = spawn("wsl.exe", args, {windowsHide: true});
+
+        let stderr = "";
+        let settled = false;
+
+        child.stdout.pipe(archiveWriteStream);
+        child.stderr.on("data", (data) => {
+            stderr += data.toString();
+        });
+
+        archiveWriteStream.on("error", (error) => {
+            if (settled) return;
+            settled = true;
+            child.kill();
+            reject(new Error(`写入 WSL 备份文件失败: ${error.message}`));
+        });
+
+        child.on("error", (error) => {
+            if (settled) return;
+            settled = true;
+            archiveWriteStream.destroy();
+            reject(new Error(`WSL tar 执行失败: ${error.message}`));
+        });
+
+        child.on("close", (code) => {
+            archiveWriteStream.end(() => {
+                if (settled) return;
+                settled = true;
+                if (code === 0 || (code === 1 && isNonFatalTarWarning(stderr))) {
+                    resolve({archivePath, log: stderr.trim()});
+                    return;
+                }
+                fsSync.rm(archivePath, {force: true}, () => {});
+                reject(new Error(`WSL tar 压缩失败，退出码 ${code}。\n${stderr}`));
+            });
         });
     });
 }
@@ -141,7 +337,7 @@ function createBackupService({settingsFile, logsDir}) {
                         }
                         if (item && typeof item.path === "string" && item.path.trim()) {
                             return [item.path.trim(), {
-                                name: typeof item.name === "string" ? item.name.trim() : path.basename(item.path.trim()),
+                                name: typeof item.name === "string" ? item.name.trim() : getPathBaseName(item.path.trim()),
                                 path: item.path.trim()
                             }];
                         }
@@ -251,7 +447,7 @@ function createBackupService({settingsFile, logsDir}) {
             } else {
                 fallbackPaths = listSourcePaths(settings.sourceFolders);
             }
-            candidates = fallbackPaths.map((item) => ({name: path.basename(item), path: item}));
+            candidates = fallbackPaths.map((item) => ({name: getPathBaseName(item), path: item}));
         }
         if (!candidates.length) throw new Error("没有可备份的源文件夹");
 
@@ -259,25 +455,34 @@ function createBackupService({settingsFile, logsDir}) {
         const results = [];
         for (const source of uniqueSources) {
             const sourceFolder = source.path;
-            const sourceName = source.name || path.basename(sourceFolder);
-            const exists = await pathExists(sourceFolder);
+            const wslSource = resolveWslSource(sourceFolder);
+            const resolvedSourceFolder = resolveFileSystemPath(sourceFolder);
+            const sourceName = source.name || getPathBaseName(sourceFolder);
+            const exists = wslSource ? wslPathExists(wslSource) : await pathExists(resolvedSourceFolder);
             if (!exists) {
-                results.push({sourceFolder, sourceName, success: false, error: "源路径不存在"});
+                results.push({sourceFolder, resolvedSourceFolder, sourceName, success: false, error: `源路径不存在: ${resolvedSourceFolder}`});
                 continue;
             }
             try {
-                const result = await runRarArchive({
-                    sourceFolder,
-                    destinationFolder: backupDir,
-                    name: sourceName,
-                });
-                results.push({sourceFolder, sourceName, success: true, archivePath: result.archivePath});
+                const result = wslSource
+                    ? await runWslTarArchive({
+                        sourceFolder,
+                        destinationFolder: backupDir,
+                        name: sourceName,
+                        wslSource,
+                    })
+                    : await runRarArchive({
+                        sourceFolder: resolvedSourceFolder,
+                        destinationFolder: backupDir,
+                        name: sourceName,
+                    });
+                results.push({sourceFolder, resolvedSourceFolder, sourceName, success: true, archivePath: result.archivePath});
             } catch (error) {
-                results.push({sourceFolder, sourceName, success: false, error: error.message});
+                results.push({sourceFolder, resolvedSourceFolder, sourceName, success: false, error: error.message});
             }
         }
         const failedNames = results.filter((item) => !item.success).map((item) => item.sourceName);
-        const selectedNames = uniqueSources.map((item) => item.name || path.basename(item.path));
+        const selectedNames = uniqueSources.map((item) => item.name || getPathBaseName(item.path));
         await appendBackupLog({startedAt, selectedNames, failedNames, results});
 
         return {
