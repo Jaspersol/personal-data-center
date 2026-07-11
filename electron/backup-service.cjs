@@ -168,6 +168,12 @@ function isNonFatalTarWarning(stderr) {
     );
 }
 
+function appendLimitedOutput(current, chunk, maxLength = 65536) {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk || "");
+    const combined = current + text;
+    return combined.length > maxLength ? combined.slice(combined.length - maxLength) : combined;
+}
+
 function runRarArchive({sourceFolder, destinationFolder, name}) {
     return new Promise((resolve, reject) => {
         const archivePath = createArchiveName({sourceFolder, destinationFolder, name, extension: "rar"});
@@ -179,10 +185,10 @@ function runRarArchive({sourceFolder, destinationFolder, name}) {
         let stderr = "";
 
         child.stdout.on("data", (data) => {
-            stdout += data.toString();
+            stdout = appendLimitedOutput(stdout, data);
         });
         child.stderr.on("data", (data) => {
-            stderr += data.toString();
+            stderr = appendLimitedOutput(stderr, data);
         });
 
         child.on("error", (error) => {
@@ -229,7 +235,7 @@ function runWslTarArchive({sourceFolder, destinationFolder, name, wslSource}) {
 
         child.stdout.pipe(archiveWriteStream);
         child.stderr.on("data", (data) => {
-            stderr += data.toString();
+            stderr = appendLimitedOutput(stderr, data);
         });
 
         archiveWriteStream.on("error", (error) => {
