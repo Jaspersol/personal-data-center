@@ -372,15 +372,22 @@ function createBackupService({settingsFile, logsDir}) {
         }
         
         // 保存到所有配置路径
+        const errors = [];
         for (const configPath of configPaths) {
             try {
                 await ensureDir(path.dirname(configPath));
                 await fs.writeFile(configPath, JSON.stringify(normalized, null, 2), "utf-8");
                 console.log(`配置文件已保存: ${configPath}`);
             } catch (error) {
-                console.error(`配置文件保存失败 (${configPath}): ${error.message}`);
-                // 不中断流程，继续尝试其他路径
+                errors.push(`配置文件保存失败 (${configPath}): ${error.message}`);
             }
+        }
+        if (errors.length > 0) {
+            if (errors.length === configPaths.length) {
+                // 所有路径都写入失败时向上抛错，避免 UI 误报"已保存"而脚本读到旧配置
+                throw new Error(errors.join("\n"));
+            }
+            errors.forEach((error) => console.error(error));
         }
         
         return normalized;

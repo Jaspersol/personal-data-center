@@ -106,15 +106,14 @@ export async function saveSettingsToIdb(record) {
 
   // 同时保存到 backup.config.json（仅在Electron环境中）
   if (typeof window !== "undefined" && window.backupApi) {
-    try {
-      // 通过backupApi保存配置，避免在浏览器环境中使用Node.js模块
-      const configData = {
-        sourceFolders: payload.backupSources.map(s => ({ name: s.name, path: s.path })),
-        backupDestination: payload.backupDestination
-      };
-      await window.backupApi.saveConfig(configData);
-    } catch (error) {
-      console.error("保存到 backup.config.json 失败:", error);
+    const configData = {
+      sourceFolders: payload.backupSources.map(s => ({ name: s.name, path: s.path })),
+      backupDestination: payload.backupDestination
+    };
+    const result = await window.backupApi.saveConfig(configData);
+    if (result && result.success === false) {
+      // 写入配置文件失败必须告知用户，否则脚本备份会一直读到旧配置
+      throw new Error(`写入配置文件失败: ${result.error || "未知错误"}`);
     }
   }
 

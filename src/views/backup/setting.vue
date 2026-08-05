@@ -27,10 +27,15 @@ async function saveSettings() {
     if (!String(s.name || "").trim()) return ElMessage.warning("请填写名称");
     if (!String(s.path || "").trim()) return ElMessage.warning("请选择文件夹路径");
   }
-  await saveSettingsToIdb({
-    backupDestination: state.backupDestination,
-    backupSources: state.backupSources,
-  });
+  try {
+    await saveSettingsToIdb({
+      backupDestination: state.backupDestination,
+      backupSources: state.backupSources,
+    });
+  } catch (error) {
+    ElMessage.error(`保存失败：${error.message || error}`);
+    return;
+  }
   notifySettingsChanged();
   ElMessage.success("设置已保存");
 }

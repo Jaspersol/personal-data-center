@@ -73,7 +73,17 @@ function parseArgs() {
   
   // 尝试不同位置的配置文件
   const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-  
+
+  // 打包环境（脚本位于 resources/scripts）：优先使用 userData 下的配置文件，与主进程保持一致（可写）
+  const isPackagedLayout = path.basename(path.dirname(scriptDir)) === "resources";
+  if (isPackagedLayout && process.env.APPDATA) {
+    const userDataConfigPath = path.join(process.env.APPDATA, "个人数据中心", "backup.config.json");
+    if (fs.existsSync(userDataConfigPath)) {
+      console.log(`找到 userData 配置文件: ${userDataConfigPath}`);
+      return userDataConfigPath;
+    }
+  }
+
   // 路径1: 脚本目录的上一级 (打包后路径)
   const configPath1 = path.join(scriptDir, "../backup.config.json");
   // 修复Windows路径问题
@@ -115,11 +125,8 @@ function parseArgs() {
 function main() {
   const configPath = parseArgs();
   
-  // 构建命令行参数
-  const args = ["--backup"];
-  if (configPath !== parseArgs()) {
-    args.push("--config", configPath);
-  }
+  // 构建命令行参数，始终显式指定配置文件，避免主进程自行猜测导致读取到旧配置
+  const args = ["--backup", "--config", configPath];
   
   console.log(`开始备份...`);
   console.log(`执行命令: ${appExecutablePath} ${args.join(" ")}`);

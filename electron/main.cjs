@@ -32,29 +32,42 @@ function getConfigPath(userArgs) {
         return userArgs[configFlagIndex + 1];
     }
     
-    // 打包环境：配置文件在 resources 目录下
+    // 打包环境：优先使用 userData 下的配置文件（可写，避免 Program Files 等只读位置导致写入失败）
     if (process.execPath && process.execPath.endsWith('.exe')) {
+        const fs = require('fs');
         const exeDir = path.dirname(process.execPath);
         const resourcesDir = path.join(exeDir, 'resources');
         const resourcesConfigPath = path.join(resourcesDir, 'backup.config.json');
-        
-        console.log('检查打包环境配置文件:', resourcesConfigPath);
-        
-        // 检查resources目录下的配置文件
-        try {
-            const fs = require('fs');
-            if (fs.existsSync(resourcesConfigPath)) {
-                console.log('找到打包环境配置文件');
-                return resourcesConfigPath;
-            }
-        } catch (error) {
-            console.log('打包环境配置文件检查失败:', error.message);
+        const userDataConfigPath = path.join(app.getPath('userData'), 'backup.config.json');
+
+        console.log('检查 userData 配置文件:', userDataConfigPath);
+
+        if (fs.existsSync(userDataConfigPath)) {
+            console.log('使用 userData 配置文件');
+            return userDataConfigPath;
         }
-        
-        // 回退到app.asar内的配置文件（开发环境）
-        const asarConfigPath = path.join(resourcesDir, 'app.asar', 'backup.config.json');
-        console.log('回退到asar内配置文件:', asarConfigPath);
-        return asarConfigPath;
+
+        // 首次运行：从 resources 或 app.asar 内初始化 userData 配置文件
+        const candidateSources = [
+            resourcesConfigPath,
+            path.join(resourcesDir, 'app.asar', 'backup.config.json'),
+        ];
+        for (const candidate of candidateSources) {
+            try {
+                if (fs.existsSync(candidate)) {
+                    fs.mkdirSync(path.dirname(userDataConfigPath), {recursive: true});
+                    fs.copyFileSync(candidate, userDataConfigPath);
+                    console.log(`已从 ${candidate} 初始化 userData 配置文件`);
+                    return userDataConfigPath;
+                }
+            } catch (error) {
+                console.warn(`初始化 userData 配置文件失败 (${candidate}):`, error.message);
+            }
+        }
+
+        // 无任何可用配置来源，直接使用 userData 路径（保存设置时自动创建）
+        console.log('未找到现有配置文件，使用 userData 路径:', userDataConfigPath);
+        return userDataConfigPath;
     }
     
     // 开发环境
