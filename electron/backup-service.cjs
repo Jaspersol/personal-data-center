@@ -178,7 +178,7 @@ function runRarArchive({sourceFolder, destinationFolder, name}) {
     return new Promise((resolve, reject) => {
         const archivePath = createArchiveName({sourceFolder, destinationFolder, name, extension: "rar"});
 
-        const args = ["a", "-ep1", archivePath, sourceFolder];
+        const args = ["a", "-ep1", "-x*\\node_modules\\*", archivePath, sourceFolder];
         const child = spawn("rar", args, {shell: true});
 
         let stdout = "";
@@ -223,6 +223,8 @@ function runWslTarArchive({sourceFolder, destinationFolder, name, wslSource}) {
             "tar",
             "--ignore-failed-read",
             "--warning=no-file-changed",
+            "--exclude=*/node_modules",
+            "--exclude=node_modules",
             "--exclude=*.socket",
             "-czf", "-",
             "-C", sourceParent,
