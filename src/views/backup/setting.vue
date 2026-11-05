@@ -40,24 +40,40 @@ async function saveSettings() {
   ElMessage.success("设置已保存");
 }
 
+/**
+ * 取路径最后一级目录名，作为新增备份项的默认名称
+ * @param {string} pathValue 绝对路径
+ * @returns {string} 目录名，取不到时返回「备份项」
+ */
+function folderBaseName(pathValue) {
+  return (
+    String(pathValue || "")
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .filter(Boolean)
+      .pop() || "备份项"
+  );
+}
+
 async function addBackupSource() {
   if (!hasApi.value) return;
   const folder = await window.backupApi.selectFolder();
   if (!folder) return;
-  const name =
-    folder
-      .replace(/[/\\]+$/, "")
-      .split(/[/\\]/)
-      .filter(Boolean)
-      .pop() || "备份项";
-  state.backupSources.push({ id: crypto.randomUUID(), name, path: folder });
+  state.backupSources.push({
+    id: crypto.randomUUID(),
+    name: folderBaseName(folder),
+    path: folder,
+  });
 }
 
 async function pickPathForSource(entry) {
   if (!hasApi.value) return;
   const folder = await window.backupApi.selectFolder();
   if (!folder) return;
+  // 名称仍是旧路径自动推导出的默认值时跟随新路径更新；用户手改过的名称保持不变
+  const nameIsAuto = !entry.name || entry.name === folderBaseName(entry.path);
   entry.path = folder;
+  if (nameIsAuto) entry.name = folderBaseName(folder);
 }
 
 async function chooseDestination() {
