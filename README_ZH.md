@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/logo.png" width="120" alt="Personal Data Center logo">
+
 # 个人数据中心
 
 ### 一个只产出「带时间戳的普通压缩包」的目录备份客户端 —— 不做镜像同步，不用私有格式

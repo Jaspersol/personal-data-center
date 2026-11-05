@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/logo.png" width="120" alt="Personal Data Center logo">
+
 # Personal Data Center
 
 ### A folder backup client that produces plain, timestamped archives — no mirroring, no proprietary container
