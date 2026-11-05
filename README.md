@@ -36,10 +36,7 @@ npm run start
 
 ```json
 {
-  "sourceFolders": [
-    "D:/example/source1",
-    "D:/example/source2"
-  ],
+  "sourceFolders": ["D:/example/source1", "D:/example/source2"],
   "backupDestination": "D:/example/backup-target"
 }
 ```

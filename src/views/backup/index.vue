@@ -1,10 +1,7 @@
 <script setup>
-import {computed, onMounted, onUnmounted, reactive} from "vue";
-import {ElMessage} from "element-plus";
-import {
-  loadSettingsFromIdb,
-  subscribeSettingsChanges
-} from "/src/db/settings-idb.js";
+import { computed, onMounted, onUnmounted, reactive } from "vue";
+import { ElMessage } from "element-plus";
+import { loadSettingsFromIdb, subscribeSettingsChanges } from "../../db/settings-idb.js";
 
 const state = reactive({
   backupSources: [],
@@ -27,15 +24,15 @@ async function loadSettings() {
 function getSelectedSources() {
   const selectedSet = new Set(state.selectedForBackup);
   return state.backupSources
-      .filter((item) => selectedSet.has(item.path))
-      .map((item) => ({name: item.name, path: item.path}));
+    .filter((item) => selectedSet.has(item.path))
+    .map((item) => ({ name: item.name, path: item.path }));
 }
 
 async function readLog() {
   if (!hasApi.value) return;
   try {
     state.logContent = await window.backupApi.readLog();
-  } catch (error) {
+  } catch {
     ElMessage.error("读取日志失败");
   }
 }
@@ -76,8 +73,7 @@ async function openPath(pathValue) {
   if (errorMessage) ElMessage.error(`打开路径失败: ${errorMessage}`);
 }
 
-let unsubscribeSettings = () => {
-};
+let unsubscribeSettings = () => {};
 
 onMounted(async () => {
   unsubscribeSettings = subscribeSettingsChanges(loadSettings);
@@ -100,8 +96,11 @@ onUnmounted(() => unsubscribeSettings());
       <h4>选择执行备份:</h4>
       <el-card class="checkbox-card">
         <label v-for="s in state.backupSources" :key="s.id">
-          <input type="checkbox" :checked="state.selectedForBackup.includes(s.path)"
-                 @change="toggleSelected(s.path)"/>
+          <input
+            type="checkbox"
+            :checked="state.selectedForBackup.includes(s.path)"
+            @change="toggleSelected(s.path)"
+          />
           <span class="chk-label">{{ s.name }}</span>
           <el-button size="small" @click="openPath(s.path)">打开路径</el-button>
         </label>
@@ -179,5 +178,4 @@ onUnmounted(() => unsubscribeSettings());
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-
 </style>

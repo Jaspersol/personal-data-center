@@ -9,9 +9,9 @@ function handleSelectMenu(index) {
 <template>
   <div class="page">
     <el-menu
-        default-active="/settings/backup-setting"
-        class="el-menu-vertical-demo"
-        @select="handleSelectMenu"
+      default-active="/settings/backup-setting"
+      class="el-menu-vertical-demo"
+      @select="handleSelectMenu"
     >
       <el-menu-item index="/settings/backup-setting">
         <template #title>

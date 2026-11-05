@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+logs/
+indexeddb/
+public/
+
+# 依赖锁文件由 npm 生成，不参与格式化
+package-lock.json

@@ -26,6 +26,12 @@ function defaultRecord() {
   };
 }
 
+/**
+ * 读取 IndexedDB 中的设置记录（单例记录，id 固定为 "singleton"）。
+ *
+ * @returns {Promise<{id: string, backupDestination: string, backupSources: Array<object>}>}
+ *   记录不存在时返回默认值；老版本只有 sourceFolders 字段时会自动迁移为 backupSources
+ */
 export async function loadSettingsFromIdb() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -54,23 +60,25 @@ function normalizeRecord(row) {
 }
 
 function migrateLegacyFolders(folders) {
-  return folders.map((item) => {
-    if (typeof item === "string") {
-      return {
-        id: crypto.randomUUID(),
-        name: item.split(/[/\\]/).filter(Boolean).pop() || item,
-        path: item,
-      };
-    }
-    if (item && typeof item.path === "string") {
-      return {
-        id: item.id || crypto.randomUUID(),
-        name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : item.path,
-        path: item.path,
-      };
-    }
-    return null;
-  }).filter(Boolean);
+  return folders
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          id: crypto.randomUUID(),
+          name: item.split(/[/\\]/).filter(Boolean).pop() || item,
+          path: item,
+        };
+      }
+      if (item && typeof item.path === "string") {
+        return {
+          id: item.id || crypto.randomUUID(),
+          name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : item.path,
+          path: item.path,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function normalizeSource(item) {
@@ -80,22 +88,37 @@ function normalizeSource(item) {
   const pathTrimmed = item.path.trim();
   return {
     id: typeof item.id === "string" && item.id ? item.id : crypto.randomUUID(),
-    name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : pathTrimmed.split(/[/\\]/).filter(Boolean).pop() || pathTrimmed,
+    name:
+      typeof item.name === "string" && item.name.trim()
+        ? item.name.trim()
+        : pathTrimmed.split(/[/\\]/).filter(Boolean).pop() || pathTrimmed,
     path: pathTrimmed,
   };
 }
 
+/**
+ * 保存设置：先写入 IndexedDB，再双写到 backup.config.json（仅 Electron 环境）。
+ *
+ * 两份存储必须同时成功，否则脚本备份（run-backup.mjs）会读到旧配置；因此配置文件写入
+ * 失败时直接抛错，而不是静默忽略。
+ *
+ * @param {{backupDestination?: string, backupSources?: Array<object>}} record
+ * @returns {Promise<{id: string, backupDestination: string, backupSources: Array<object>}>}
+ *   实际写入 IndexedDB 的规范化记录
+ * @throws {Error} backup.config.json 写入失败时抛出，提示文案带主进程返回的原因
+ */
 export async function saveSettingsToIdb(record) {
   const db = await openDb();
   const payload = {
     id: SINGLETON_ID,
-    backupDestination: typeof record.backupDestination === "string" ? record.backupDestination.trim() : "",
+    backupDestination:
+      typeof record.backupDestination === "string" ? record.backupDestination.trim() : "",
     backupSources: Array.isArray(record.backupSources)
-        ? record.backupSources.map(normalizeSource).filter((s) => s.name && s.path)
-        : [],
+      ? record.backupSources.map(normalizeSource).filter((s) => s.name && s.path)
+      : [],
   };
 
-  // 保存到 IndexedDB
+  // 先写入 IndexedDB
   const saved = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
@@ -104,15 +127,14 @@ export async function saveSettingsToIdb(record) {
     req.onerror = () => reject(req.error);
   });
 
-  // 同时保存到 backup.config.json（仅在Electron环境中）
+  // 同时保存到 backup.config.json（仅 Electron 环境）
   if (typeof window !== "undefined" && window.backupApi) {
     const configData = {
-      sourceFolders: payload.backupSources.map(s => ({ name: s.name, path: s.path })),
-      backupDestination: payload.backupDestination
+      sourceFolders: payload.backupSources.map((s) => ({ name: s.name, path: s.path })),
+      backupDestination: payload.backupDestination,
     };
     const result = await window.backupApi.saveConfig(configData);
     if (result && result.success === false) {
-      // 写入配置文件失败必须告知用户，否则脚本备份会一直读到旧配置
       throw new Error(`写入配置文件失败: ${result.error || "未知错误"}`);
     }
   }
@@ -122,16 +144,27 @@ export async function saveSettingsToIdb(record) {
 
 const CHANNEL = "pdc-settings";
 
+/**
+ * 广播“设置已变更”事件，让其它窗口（如主页面）重新加载设置。
+ *
+ * @returns {void}
+ */
 export function notifySettingsChanged() {
   try {
     const ch = new BroadcastChannel(CHANNEL);
     ch.postMessage("changed");
     ch.close();
   } catch {
-    /* ignore */
+    // 浏览器不支持 BroadcastChannel 时降级为不通知，调用方无需感知
   }
 }
 
+/**
+ * 订阅设置变更事件。
+ *
+ * @param {() => void} onChange 收到变更通知时执行的回调
+ * @returns {() => void} 取消订阅函数；BroadcastChannel 不可用时返回空函数，调用处可直接调用
+ */
 export function subscribeSettingsChanges(onChange) {
   try {
     const ch = new BroadcastChannel(CHANNEL);
@@ -140,6 +173,7 @@ export function subscribeSettingsChanges(onChange) {
       ch.close();
     };
   } catch {
+    // BroadcastChannel 不可用时降级为不通知，返回空的取消订阅函数保持调用方代码一致
     return () => {};
   }
 }

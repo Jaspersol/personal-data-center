@@ -1,11 +1,11 @@
 <script setup>
-import {computed, onMounted, onUnmounted, reactive} from "vue";
-import {ElMessage} from "element-plus";
+import { computed, onMounted, onUnmounted, reactive } from "vue";
+import { ElMessage } from "element-plus";
 import {
   loadSettingsFromIdb,
   notifySettingsChanged,
   saveSettingsToIdb,
-  subscribeSettingsChanges
+  subscribeSettingsChanges,
 } from "../../db/settings-idb.js";
 
 const state = reactive({
@@ -44,8 +44,13 @@ async function addBackupSource() {
   if (!hasApi.value) return;
   const folder = await window.backupApi.selectFolder();
   if (!folder) return;
-  const name = folder.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).pop() || "备份项";
-  state.backupSources.push({id: crypto.randomUUID(), name, path: folder});
+  const name =
+    folder
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .filter(Boolean)
+      .pop() || "备份项";
+  state.backupSources.push({ id: crypto.randomUUID(), name, path: folder });
 }
 
 async function pickPathForSource(entry) {
@@ -72,8 +77,7 @@ async function openPath(pathValue) {
   if (errorMessage) ElMessage.error(`打开路径失败: ${errorMessage}`);
 }
 
-let unsubscribeSettings = () => {
-};
+let unsubscribeSettings = () => {};
 
 onMounted(async () => {
   unsubscribeSettings = subscribeSettingsChanges(loadSettings);
@@ -91,6 +95,7 @@ onUnmounted(() => unsubscribeSettings());
     <el-button @click="saveSettings">保存设置</el-button>
   </div>
   <div class="button-row">
+    <!-- prettier-ignore -->
     <div class="load-position"><strong>备份存放路径:</strong>&nbsp;<div>{{ state.backupDestination || "未设置" }}</div></div>
     <el-button size="small" @click="openPath(state.backupDestination)">打开路径</el-button>
   </div>
@@ -99,7 +104,7 @@ onUnmounted(() => unsubscribeSettings());
       <ul class="folder-list">
         <li v-for="s in state.backupSources" :key="s.id">
           <div class="source-row">
-            <el-input v-model="s.name" type="text" placeholder="备份名称（必填）"/>
+            <el-input v-model="s.name" type="text" placeholder="备份名称（必填）" />
             <code>{{ s.path || "未选择路径" }}</code>
             <div class="button-row">
               <el-button @click="pickPathForSource(s)">选择文件夹</el-button>

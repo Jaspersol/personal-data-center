@@ -20,7 +20,7 @@ input[type="checkbox"] {
   width: 18px;
   height: 18px;
   border: 1px solid #dcdfe6;
-  border-radius: 3px; /* 圆角 */
+  border-radius: 3px;
   background: #fff;
   cursor: pointer;
   position: relative;
@@ -28,8 +28,8 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:checked {
-  background: #409EFF;
-  border-color: #409EFF;
+  background: #409eff;
+  border-color: #409eff;
 }
 
 input[type="checkbox"]:checked::after {
@@ -46,7 +46,7 @@ input[type="checkbox"]:checked::after {
 }
 
 input[type="checkbox"]:hover:not(:checked) {
-  border-color: #409EFF;
+  border-color: #409eff;
 }
 
 .el-card__body {
