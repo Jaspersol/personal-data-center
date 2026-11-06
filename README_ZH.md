@@ -29,8 +29,8 @@
 - **永不备份 `node_modules`** —— 两种压缩方式都排除它，一个前端项目不会突然变成 2 GB 的包
 - **失败按源逐项报告** —— 一个目录出错不影响其余目录继续；结果列表和退出码会指出是哪个失败
 - **给任务计划程序用的无界面模式** —— `--backup` 执行一次备份，只要有失败就以退出码 1 结束
-- **每月的守门脚本** —— `scripts/auto-backup.bat` 发现本月已有日志就跳过，因此「每天跑一次的任务」实际每月只真正备份一次
-- **一天一个日志文件** —— 写在可执行文件旁边，并在主窗口里直接显示
+- **每月的守门脚本** —— `scripts/auto-backup.bat` 只在本月存在成功标记（`logs/backup-success-<yyyy-MM>.log`）时跳过；标记由主程序在全部压缩包校验通过后写入，因此备份失败过的月份下次仍会重试
+- **一天一个日志文件** —— 写在应用的 userData `logs/` 目录下，并在主窗口里直接显示
 
 ## 环境要求
 
@@ -60,11 +60,11 @@ npm run start
 2. **备份** —— 在主窗口勾选要备份的源，点击「手动执行备份」。结果出现在右侧日志面板，「打开备份路径」可直接在资源管理器中打开存放目录。
 3. **看日志** —— 「备份日志」显示当天的日志：时间、本次选中的名称、以及每个源的成功或失败原因。
 
-压缩包落在 `<存放路径>/<yyyy-MM-dd>/<名称>_<yyyyMMdd_HHmmss>.rar`（WSL 源为 `.tar.gz`）。
+压缩包落在 `<存放路径>/<yyyy-MM-dd>/<名称>_<yyyyMMdd_HHmmssSSS>.rar`（WSL 源为 `.tar.gz`）。时间戳带毫秒，并在重名时追加序号，两次备份不会互相覆盖；目标目录上的互斥锁让手动备份与计划任务备份串行执行。
 
 ## 配置存储
 
-设置同时存在两处，保存时必须都成功 —— 否则代码会直接抛错，而不是一边提示「已保存」、一边让 `run-backup.mjs` 读到旧配置：
+设置同时存在两处。配置文件是权威存储：只有它写入成功才算保存成功；完全写不进去时会回滚 IndexedDB，`resources` 里的副本写入失败则按「部分保存」提示，而不会谎报「已保存」：
 
 - **IndexedDB**（`personal-data-center` → `appSettings`，单条记录，id 为 `singleton`）—— 两个窗口读写的就是它
 - **`backup.config.json`** —— 无界面模式和各脚本读的是它
@@ -81,7 +81,7 @@ npm run start
 }
 ```
 
-`sourceFolders` 也可以直接是字符串数组，此时名称由路径推导。打包后应用把可写副本放在 `%APPDATA%\个人数据中心\backup.config.json`，首次运行从 `resources\backup.config.json` 播种 —— `Program Files` 不可写，直接保存在那里会失败。
+`sourceFolders` 也可以直接是字符串数组，此时名称由路径推导。打包后应用把可写副本放在 Electron 的 userData 目录（旧版本是 `%APPDATA%\个人数据中心\backup.config.json`，当前是 `%APPDATA%\personal-data-center\backup.config.json`），首次运行从 `resources\backup.config.json` 播种 —— `Program Files` 不可写，直接保存在那里会失败。`run-backup.mjs` 在没有显式 `--config` 时会探测同样的 userData 目录名。
 
 ## 无界面与定时备份
 
@@ -92,7 +92,7 @@ npm run backup
 npm run backup -- --config ./your-config.json
 ```
 
-若要每月执行一次，把任务计划程序指向 `scripts/auto-backup.bat`；它会检查 `logs/backup-<yyyy-MM>-*.log`，本月还没有日志时才真正执行备份。
+若要每月执行一次，把任务计划程序指向 `scripts/auto-backup.bat`；它只在本月存在成功标记（`backup-success-<yyyy-MM>.log`）时跳过。按天写的日志（失败时也会写）不再被当成成功依据。
 
 ## 支持的源路径
 
@@ -110,7 +110,7 @@ WSL 路径靠 UNC 形式（`\\wsl$\…`、`\\wsl.localhost\…`）或「Linux �
 ### 备份客户端
 
 - **手动执行** —— 勾选后一键备份，逐个源显示压缩包路径或错误原因
-- **完整日志** —— 每次运行的时间、选中的名称、逐源结果，追加写入 `<应用目录>/logs/backup-yyyy-MM-dd.log`
+- **完整日志** —— 每次运行的时间、选中的名称、逐源结果，追加写入 `<userData>/logs/backup-yyyy-MM-dd.log`
 - **路径快捷入口** —— 每个源和存放路径都有「打开路径」按钮，直接在资源管理器里定位
 - **两种引擎** —— Windows 路径用 WinRAR 的 `rar`，WSL 内路径用 `wsl.exe tar`，按源自动选择
 
@@ -138,7 +138,7 @@ WSL 路径靠 UNC 形式（`\\wsl$\…`、`\\wsl.localhost\…`）或「Linux �
 <details>
 <summary><strong>备份日志写到哪里？</strong></summary>
 
-可执行文件旁的 `logs/` 目录：开发运行写在仓库的 `logs/`，打包运行写在 `.exe` 所在目录。若该目录不可写，服务会退回到 `Documents/personal-data-center/logs`。
+Electron 的 userData 目录（Windows 上是 `%APPDATA%\personal-data-center\logs`），开发运行、安装版与 portable 版都写在同一个稳定位置。开发运行回退到仓库的 `logs/`，打包运行回退到 `Documents\PersonalDataCenter\logs`；只有全部不可写时才退到 `%TEMP%`。
 
 </details>
 

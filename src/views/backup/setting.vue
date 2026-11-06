@@ -23,9 +23,16 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  const seenNames = new Set();
   for (const s of state.backupSources) {
     if (!String(s.name || "").trim()) return ElMessage.warning("请填写名称");
     if (!String(s.path || "").trim()) return ElMessage.warning("请选择文件夹路径");
+    // 归档名由备份名称决定，重名会生成无法区分的压缩包，保存前先拦截
+    const nameKey = String(s.name).trim().toLowerCase();
+    if (seenNames.has(nameKey)) {
+      return ElMessage.warning(`备份名称重复：${String(s.name).trim()}，请修改后再保存`);
+    }
+    seenNames.add(nameKey);
   }
   try {
     await saveSettingsToIdb({
@@ -33,7 +40,12 @@ async function saveSettings() {
       backupSources: state.backupSources,
     });
   } catch (error) {
-    ElMessage.error(`保存失败：${error.message || error}`);
+    // 主配置已写入但副本失败时按“部分保存”提示，不能笼统报“保存失败”
+    if (error.partial) {
+      ElMessage.warning(error.message || "设置已保存，但同步副本未写入");
+    } else {
+      ElMessage.error(`保存失败：${error.message || error}`);
+    }
     return;
   }
   notifySettingsChanged();
@@ -118,6 +130,9 @@ onUnmounted(() => unsubscribeSettings());
   <div class="setting-container">
     <el-card class="settings-card">
       <ul class="folder-list">
+        <li v-if="state.backupSources.length === 0" class="empty-hint">
+          尚未添加被备份项，点击上方「添加被备份项」选择要备份的文件夹。
+        </li>
         <li v-for="s in state.backupSources" :key="s.id">
           <div class="source-row">
             <el-input v-model="s.name" type="text" placeholder="备份名称（必填）" />
@@ -185,6 +200,12 @@ onUnmounted(() => unsubscribeSettings());
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 10px;
+}
+
+.folder-list li.empty-hint {
+  border-style: dashed;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .source-row {

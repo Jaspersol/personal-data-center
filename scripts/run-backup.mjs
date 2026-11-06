@@ -1,137 +1,177 @@
 import path from "node:path";
 import process from "node:process";
-import { spawnSync } from "node:child_process";
+import os from "node:os";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// fileURLToPath 会正确解码，路径含空格或中文时不会出现 %20 之类的转义残留
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDir = path.dirname(scriptPath);
+const resourcesDir = path.dirname(scriptDir);
+const appRootDir = path.dirname(resourcesDir);
+// 打包后脚本位于 <应用>/resources/scripts，开发环境则位于仓库的 scripts 目录
+const isPackagedLayout = path.basename(resourcesDir) === "resources";
 
 // 输出当前路径信息，用于调试
 console.log("当前工作目录:", process.cwd());
-console.log("脚本文件路径:", import.meta.url);
+console.log("脚本文件路径:", scriptPath);
 console.log("可执行文件路径:", process.execPath);
-console.log("可执行文件目录:", path.dirname(process.execPath));
 
-// 确定应用程序可执行文件路径
-function getAppExecutablePath() {
-  // 方法1: 检查是否在打包环境中
-  if (process.execPath && process.execPath.endsWith(".exe")) {
-    const exeName = path.basename(process.execPath);
+// productName 是 PersonalDataCenter，历史版本用过中文名，保留为兜底
+const APP_EXE_NAMES = [
+  "PersonalDataCenter.exe",
+  "个人数据中心.exe",
+  "Personal Data Center.exe",
+  "personal-data-center.exe",
+];
+const APP_EXE_NAME_SET = new Set(APP_EXE_NAMES.map((name) => name.toLowerCase()));
 
-    // 如果当前就是应用程序可执行文件，直接返回
-    if (exeName.includes("个人数据中心") || exeName.includes("Personal Data Center")) {
-      return process.execPath;
-    }
+// 开发者应把 PDC_APP_EXE 指向真正的应用可执行文件（portable 版的解压目录不可预测时尤其有用）
+const appExeOverride = process.env.PDC_APP_EXE;
+
+// electron-builder 的 userData 目录名来自 Electron 的 app.getName()：
+// productName 生效时为 PersonalDataCenter，当前 package.json 的 name 则是 personal-data-center，
+// 更早的版本用过中文名。逐个探测，取第一个存在配置文件的目录
+const USER_DATA_DIR_NAMES = ["PersonalDataCenter", "personal-data-center", "个人数据中心"];
+
+function getUserDataRootDirs() {
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    return USER_DATA_DIR_NAMES.map((name) => path.join(appData, name));
   }
-
-  // 方法2: 通过脚本路径查找
-  let scriptPath = new URL(import.meta.url).pathname;
-  if (process.platform === "win32" && scriptPath.startsWith("/")) {
-    scriptPath = scriptPath.substring(1);
+  if (process.platform === "darwin") {
+    const base = path.join(os.homedir(), "Library", "Application Support");
+    return USER_DATA_DIR_NAMES.map((name) => path.join(base, name));
   }
-
-  // 打包后脚本位于 resources/scripts 目录
-  const scriptDir = path.dirname(scriptPath);
-  const resourcesDir = path.join(scriptDir, "..");
-  const appDir = path.join(resourcesDir, "..");
-
-  // 尝试找到应用程序可执行文件
-  const possibleExePaths = [
-    path.join(appDir, "个人数据中心.exe"),
-    path.join(appDir, "Personal Data Center.exe"),
-    path.join(appDir, "personal-data-center.exe"),
-    // 打包后的路径
-    path.join(appDir, "win-unpacked", "个人数据中心.exe"),
-    path.join(appDir, "..", "个人数据中心.exe"),
-  ];
-
-  for (const exePath of possibleExePaths) {
-    if (fs.existsSync(exePath)) {
-      console.log(`找到应用程序可执行文件: ${exePath}`);
-      return exePath;
-    }
-  }
-
-  // 方法3: 使用当前进程的可执行文件
-  if (process.execPath && fs.existsSync(process.execPath)) {
-    console.log(`使用当前进程可执行文件: ${process.execPath}`);
-    return process.execPath;
-  }
-
-  // 最终回退方案
-  const defaultExePath = path.join(appDir, "个人数据中心.exe");
-  console.log(`未找到应用程序可执行文件，使用默认路径: ${defaultExePath}`);
-  return defaultExePath;
+  const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return USER_DATA_DIR_NAMES.map((name) => path.join(base, name));
 }
 
-const appExecutablePath = getAppExecutablePath();
+function findUserDataConfigPath() {
+  for (const userDataDir of getUserDataRootDirs()) {
+    const configPath = path.join(userDataDir, "backup.config.json");
+    if (fs.existsSync(configPath)) return configPath;
+  }
+  return "";
+}
 
-function parseArgs() {
-  const args = process.argv.slice(2);
-  const configFlagIndex = args.findIndex((item) => item === "--config");
-  if (configFlagIndex >= 0 && args[configFlagIndex + 1]) {
-    return path.resolve(process.cwd(), args[configFlagIndex + 1]);
+// 开发环境用 electron 自带的 Electron 可执行文件（能加载 Electron 接口），
+// node 无法加载 Electron 接口，因此绝不用 node 执行 --backup
+function getDevElectronPath() {
+  const repoRoot = resourcesDir;
+  const candidates = [
+    path.join(repoRoot, "node_modules", "electron", "dist", "electron.exe"),
+    path.join(
+      repoRoot,
+      "node_modules",
+      "electron",
+      "dist",
+      "Electron.app",
+      "Contents",
+      "MacOS",
+      "Electron",
+    ),
+    path.join(repoRoot, "node_modules", "electron", "dist", "electron"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+// 返回 { executable, args }：args 为启动器自身需要的参数（开发环境需把应用目录传给 Electron）
+function getAppExecutable() {
+  if (appExeOverride && fs.existsSync(appExeOverride)) {
+    return { executable: appExeOverride, args: [] };
   }
 
-  // 尝试不同位置的配置文件
-  const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+  // 当前进程本身就是应用时直接复用
+  if (APP_EXE_NAME_SET.has(path.basename(process.execPath).toLowerCase())) {
+    return { executable: process.execPath, args: [] };
+  }
 
-  // 打包环境（脚本位于 resources/scripts）：优先使用 userData 下的配置文件，与主进程保持一致（可写）
-  const isPackagedLayout = path.basename(path.dirname(scriptDir)) === "resources";
-  if (isPackagedLayout && process.env.APPDATA) {
-    const userDataConfigPath = path.join(process.env.APPDATA, "个人数据中心", "backup.config.json");
-    if (fs.existsSync(userDataConfigPath)) {
-      console.log(`找到 userData 配置文件: ${userDataConfigPath}`);
-      return userDataConfigPath;
+  const searchRoots = [appRootDir];
+  // 兼容 win-unpacked 之类“可执行文件与 resources 相邻”的布局
+  if (isPackagedLayout) searchRoots.push(path.join(appRootDir, ".."));
+
+  for (const root of searchRoots) {
+    for (const exeName of APP_EXE_NAMES) {
+      const candidate = path.join(root, exeName);
+      if (fs.existsSync(candidate)) {
+        console.log(`找到应用程序可执行文件: ${candidate}`);
+        return { executable: candidate, args: [] };
+      }
     }
   }
 
-  // 路径1: 脚本目录的上一级 (打包后路径)
-  const configPath1 = path.join(scriptDir, "../backup.config.json");
-  // 修复Windows路径问题
-  const normalizedConfigPath1 = configPath1.replace(/^\\+/, "");
-  if (fs.existsSync(normalizedConfigPath1)) {
-    return normalizedConfigPath1;
+  if (!isPackagedLayout) {
+    const devElectronPath = getDevElectronPath();
+    if (devElectronPath) {
+      console.log(`开发环境使用 Electron 可执行文件: ${devElectronPath}`);
+      return { executable: devElectronPath, args: [resourcesDir] };
+    }
   }
 
-  // 路径2: 当前工作目录
-  const configPath2 = path.resolve(process.cwd(), "backup.config.json");
-  if (fs.existsSync(configPath2)) {
-    return configPath2;
+  throw new Error(
+    [
+      "未找到 PersonalDataCenter 应用程序可执行文件，无法执行备份。",
+      `已查找目录: ${searchRoots.join("、")}`,
+      "请直接运行安装目录下的 PersonalDataCenter.exe --backup --config <配置文件>，",
+      "或设置环境变量 PDC_APP_EXE 指向 PersonalDataCenter.exe。",
+      "（node 无法加载 Electron 接口，因此不会退化为 node --backup）",
+    ].join("\n"),
+  );
+}
+
+function parseArgs(argv = process.argv.slice(2)) {
+  const configFlagIndex = argv.findIndex((item) => item === "--config" || item === "-c");
+  if (configFlagIndex >= 0 && argv[configFlagIndex + 1]) {
+    const explicitConfigPath = path.resolve(process.cwd(), argv[configFlagIndex + 1]);
+    if (!fs.existsSync(explicitConfigPath)) {
+      throw new Error(`指定的配置文件不存在: ${explicitConfigPath}`);
+    }
+    return explicitConfigPath;
   }
 
-  // 路径3: 可执行文件目录
-  const appDir = path.dirname(process.execPath);
-  const configPath3 = path.join(appDir, "backup.config.json");
-  if (fs.existsSync(configPath3)) {
-    return configPath3;
+  // 主进程在开发环境和打包环境都把设置写在 Electron 的 userData 目录下，
+  // 这里优先跟随同一份文件，避免脚本与界面读到不同配置
+  const userDataConfigPath = findUserDataConfigPath();
+  if (userDataConfigPath) {
+    console.log(`找到 userData 配置文件: ${userDataConfigPath}`);
+    return userDataConfigPath;
   }
 
-  // 路径4: 应用程序目录的 resources 目录
-  const resourcesConfigPath = path.join(appDir, "resources", "backup.config.json");
-  if (fs.existsSync(resourcesConfigPath)) {
-    return resourcesConfigPath;
+  const candidatePaths = [
+    // 打包后是 resources/backup.config.json，开发环境是仓库根目录的 backup.config.json
+    path.join(resourcesDir, "backup.config.json"),
+    path.resolve(process.cwd(), "backup.config.json"),
+  ];
+
+  // 兼容直接从应用目录或 exe 目录调用脚本的场景
+  const exeDir = path.dirname(process.execPath);
+  candidatePaths.push(path.join(exeDir, "backup.config.json"));
+  candidatePaths.push(path.join(exeDir, "resources", "backup.config.json"));
+
+  for (const candidatePath of candidatePaths) {
+    if (fs.existsSync(candidatePath)) {
+      return candidatePath;
+    }
   }
 
-  // 路径5: 开发环境路径
-  const devConfigPath = path.join(scriptDir, "../../backup.config.json");
-  if (fs.existsSync(devConfigPath)) {
-    return devConfigPath;
-  }
-
-  // 默认路径
-  console.warn("未找到配置文件，使用默认路径:", configPath1);
-  return configPath1;
+  console.warn("未找到配置文件，使用默认路径:", candidatePaths[0]);
+  return candidatePaths[0];
 }
 
 function main() {
+  const { executable, args: launcherArgs } = getAppExecutable();
   const configPath = parseArgs();
 
   // 构建命令行参数，始终显式指定配置文件，避免主进程自行猜测导致读取到旧配置
-  const args = ["--backup", "--config", configPath];
+  const args = [...launcherArgs, "--backup", "--config", configPath];
 
   console.log("开始备份...");
-  console.log(`执行命令: ${appExecutablePath} ${args.join(" ")}`);
+  console.log(`执行命令: ${executable} ${args.join(" ")}`);
 
-  // 调用应用程序执行备份
-  const result = spawnSync(appExecutablePath, args, {
+  // 调用应用程序执行备份；每个参数单独传递，路径含空格也不用拼引号
+  const result = spawnSync(executable, args, {
     stdio: "inherit",
     encoding: "utf8",
   });
@@ -144,7 +184,7 @@ function main() {
 
   if (result.status !== 0) {
     console.error(`备份执行失败，退出码: ${result.status}`);
-    process.exitCode = result.status;
+    process.exitCode = result.status ?? 1;
     return;
   }
 

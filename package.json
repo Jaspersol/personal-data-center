@@ -1,7 +1,7 @@
 {
   "name": "personal-data-center",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -60,7 +60,7 @@
         "to": "scripts"
       },
       {
-        "from": "backup.config.json",
+        "from": "resources/backup.config.example.json",
         "to": "backup.config.json"
       }
     ],

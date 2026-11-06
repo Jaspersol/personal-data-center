@@ -95,6 +95,9 @@ onUnmounted(() => unsubscribeSettings());
     <div class="checkbox-container">
       <h4>选择执行备份:</h4>
       <el-card class="checkbox-card">
+        <div v-if="state.backupSources.length === 0" class="empty-hint">
+          尚未配置被备份项，请先在「设置」中添加要备份的文件夹。
+        </div>
         <label v-for="s in state.backupSources" :key="s.id">
           <input
             type="checkbox"
@@ -150,6 +153,12 @@ onUnmounted(() => unsubscribeSettings());
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.checkbox-card .empty-hint {
+  padding: 8px 0;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .checkbox-card span {

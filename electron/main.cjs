@@ -1,26 +1,41 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const { createBackupService } = require("./backup-service.cjs");
 
-// 打包后 Electron 会向 argv 塞入自身参数（可执行文件路径、inspect 开关等），
-// 需先过滤这些噪声再按用户参数解析
-function parseCommandLineArgs() {
-  const allArgs = process.argv.slice(1); // 从第一个参数开始（跳过 electron 路径）
+// Electron 自身会向 argv 注入启动器路径、应用目录和调试开关。
+// 只跳过这些固定项，不再按 "electron"/".exe" 子串过滤，
+// 否则 --config 指向的路径只要含这些字样就会被误删
+const ELECTRON_SWITCH_PREFIXES = [
+  "--inspect",
+  "--remote-debugging",
+  "--no-sandbox",
+  "--disable-gpu",
+  "--disable-software-rasterizer",
+  "--enable-logging",
+  "--log-file",
+  "--user-data-dir",
+  "--allow-file-access-from-files",
+];
 
-  // 过滤掉 Electron 相关的参数
-  const userArgs = allArgs.filter((arg) => {
-    return (
-      !arg.includes("electron") &&
-      !arg.includes(".exe") &&
-      !arg.includes("app.asar") &&
-      arg !== "." &&
-      !arg.startsWith("--inspect") &&
-      !arg.startsWith("--remote-debugging")
-    );
+function isElectronSwitch(argument) {
+  return ELECTRON_SWITCH_PREFIXES.some(
+    (prefix) =>
+      argument === prefix || argument.startsWith(`${prefix}=`) || argument.startsWith(`${prefix}-`),
+  );
+}
+
+function parseCommandLineArgs(argv = process.argv) {
+  const appRoot = path.resolve(__dirname, "..");
+  const launcherArgs = new Set([".", appRoot, process.execPath]);
+
+  const userArgs = argv.slice(1).filter((argument) => {
+    if (launcherArgs.has(argument)) return false;
+    return !isElectronSwitch(argument);
   });
 
   // 调试用：排查参数解析是否把 Electron 自身参数混进了用户参数
-  console.log("所有参数:", process.argv);
+  console.log("所有参数:", argv);
   console.log("过滤后参数:", userArgs);
 
   return userArgs;
@@ -37,7 +52,6 @@ function getConfigPath(userArgs) {
 
   // 打包环境：优先使用 userData 下的配置文件（可写，避免 Program Files 等只读位置导致写入失败）
   if (process.execPath && process.execPath.endsWith(".exe")) {
-    const fs = require("fs");
     const exeDir = path.dirname(process.execPath);
     const resourcesDir = path.join(exeDir, "resources");
     const resourcesConfigPath = path.join(resourcesDir, "backup.config.json");
@@ -87,6 +101,65 @@ const configPath = getConfigPath(args);
 // 调试用：启动时打印最终生效的备份模式与配置路径
 console.log("备份模式:", isBackupOnly);
 console.log("配置文件路径:", configPath);
+
+function isInsideTempDir(targetPath) {
+  try {
+    const relative = path.relative(app.getPath("temp"), path.resolve(targetPath));
+    return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative);
+  } catch {
+    // 取不到临时目录时按“不在临时目录”处理
+    return false;
+  }
+}
+
+function ensureWritableDir(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    const probePath = path.join(dirPath, `.write-test-${process.pid}`);
+    fs.writeFileSync(probePath, "");
+    fs.unlinkSync(probePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 日志目录固定在 userData 下：开发环境的 app.getPath("exe") 指向 node_modules/electron/dist，
+// portable 版的 exe 目录则是临时解压目录，两者都不适合存放日志
+function resolveLogsDir() {
+  const candidates = [];
+  try {
+    candidates.push(path.join(app.getPath("userData"), "logs"));
+  } catch {
+    // 取不到 userData 时依赖后续候选
+  }
+
+  if (!app.isPackaged) {
+    // 开发环境回退到仓库内的 logs 目录
+    candidates.push(path.join(__dirname, "..", "logs"));
+  }
+
+  try {
+    // 打包环境的回退目录必须位于临时目录之外，否则 portable 版日志会随解压目录一起消失
+    const documentsLogsDir = path.join(app.getPath("documents"), "PersonalDataCenter", "logs");
+    if (!isInsideTempDir(documentsLogsDir)) candidates.push(documentsLogsDir);
+  } catch {
+    // 取不到文档目录时忽略该候选
+  }
+
+  for (const candidate of candidates) {
+    if (ensureWritableDir(candidate)) return candidate;
+  }
+
+  // 所有候选都不可写时退到临时目录，至少让本次备份留下日志
+  const tempLogsDir = path.join(app.getPath("temp"), "PersonalDataCenter", "logs");
+  ensureWritableDir(tempLogsDir);
+  return tempLogsDir;
+}
+
+function formatMonthValue(value = new Date()) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+}
 
 let mainWindow;
 let settingsWindow;
@@ -139,22 +212,38 @@ function createSettingsWindow() {
   });
 }
 
-app.whenReady().then(async () => {
-  // 获取 exe 文件的路径，用于设置日志目录
-  let logsDir;
+// 只有全部归档都通过校验后才写月度成功标记：auto-backup.bat 依据该标记跳过本月，
+// 失败时不写，因此失败过的月份会在下次启动时重试
+function writeBackupSuccessMarker({ logsDir, result }) {
   try {
-    // 打包后 app.getPath("exe") 会返回 exe 文件的路径
-    const exePath = app.getPath("exe");
-    const exeDir = path.dirname(exePath);
-    logsDir = path.join(exeDir, "logs");
-  } catch {
-    // 开发环境拿不到 exe 路径，退回到仓库内的 logs 目录
-    logsDir = path.join(__dirname, "..", "logs");
+    fs.mkdirSync(logsDir, { recursive: true });
+    const markerPath = path.join(logsDir, `backup-success-${formatMonthValue()}.log`);
+    const lines = [
+      `备份成功时间: ${new Date().toISOString()}`,
+      `备份目录: ${result.destination}`,
+      ...result.results.map(
+        (item) => `${item.sourceName}\t${item.archivePath || ""}\t${item.archiveSize || 0}`,
+      ),
+      "",
+    ];
+    fs.writeFileSync(markerPath, lines.join("\n"), "utf-8");
+    console.log(`已写入月度备份成功标记: ${markerPath}`);
+  } catch (error) {
+    // 标记写失败只影响自动备份的月度判断，不能把已成功的备份改判为失败
+    console.error(`写入月度备份成功标记失败: ${error.message}`);
   }
+}
+
+app.whenReady().then(async () => {
+  const logsDir = resolveLogsDir();
 
   const service = createBackupService({
     settingsFile: configPath,
     logsDir: logsDir,
+    // 打包后把配置副本同步写回 resources；开发环境不写 node_modules 下的资源目录
+    secondarySettingsFile: app.isPackaged
+      ? path.join(process.resourcesPath, "backup.config.json")
+      : null,
   });
 
   // 如果是仅备份模式，执行备份后退出
@@ -162,67 +251,55 @@ app.whenReady().then(async () => {
     console.log("开始备份...");
     try {
       const settings = await service.loadSettings();
+      const sourceFolders = Array.isArray(settings.sourceFolders) ? settings.sourceFolders : [];
 
-      if (!settings.sourceFolders?.length || !settings.backupDestination) {
-        throw new Error(`配置文件无效，请检查 ${configPath}`);
+      if (!sourceFolders.length) {
+        throw new Error(`配置文件中没有备份源文件夹，请先在设置中添加（配置文件: ${configPath}）`);
+      }
+      if (!settings.backupDestination) {
+        throw new Error(`配置文件未设置备份存放路径，请先在设置中配置（配置文件: ${configPath}）`);
       }
 
       // 检查 sourceFolders 的结构，转换为 selectedSources 格式
-      const sources = Array.isArray(settings.sourceFolders)
-        ? settings.sourceFolders
-            .map((item) => {
-              if (typeof item === "string") {
-                return {
-                  name: path.basename(item),
-                  path: item,
-                };
-              }
-              // 确保 name 和 path 属性存在
-              if (item && typeof item.path === "string") {
-                return {
-                  name:
-                    typeof item.name === "string" && item.name.trim()
-                      ? item.name.trim()
-                      : path.basename(item.path),
-                  path: item.path.trim(),
-                };
-              }
-              return null;
-            })
-            .filter(Boolean)
-        : [];
+      const sources = sourceFolders
+        .map((item) => {
+          if (typeof item === "string") {
+            return {
+              name: path.basename(item),
+              path: item,
+            };
+          }
+          // 确保 name 和 path 属性存在
+          if (item && typeof item.path === "string") {
+            return {
+              name:
+                typeof item.name === "string" && item.name.trim()
+                  ? item.name.trim()
+                  : path.basename(item.path),
+              path: item.path.trim(),
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
 
       const result = await service.runBackup({ selectedSources: sources });
       // 调试用：输出逐项备份结果，便于在无界面模式下定位失败项
       console.log("备份结果:", JSON.stringify(result, null, 2));
 
-      // 调试用：确认备份日志实际写入了哪个目录，写不进去时会打印失败原因
-      try {
-        const fs = require("fs");
-        const testLogPath = path.join(logsDir, "test-write.log");
-        fs.writeFileSync(testLogPath, `测试写入: ${new Date().toISOString()}`);
-        fs.unlinkSync(testLogPath);
-        console.log(`日志目录可写: ${logsDir}`);
-      } catch (error) {
-        console.warn(`日志目录写入测试失败: ${error.message}`);
-        console.warn("尝试使用备用日志目录...");
-
-        // 尝试使用临时目录作为备用
-        const os = require("os");
-        const tempLogsDir = path.join(os.tmpdir(), "personal-data-center", "logs");
-        console.log(`备用日志目录: ${tempLogsDir}`);
-      }
-
       if (result.failedCount > 0) {
         process.exitCode = 1;
+        console.error(`备份结束，但有 ${result.failedCount} 项失败，详见日志: ${logsDir}`);
+      } else {
+        writeBackupSuccessMarker({ logsDir, result });
+        console.log(`备份完成，日志目录: ${logsDir}`);
       }
-
-      console.log(`备份完成，日志目录: ${logsDir}`);
     } catch (error) {
       console.error(error.message || error);
       process.exitCode = 1;
     } finally {
-      app.quit();
+      // app.quit() 内部按 0 退出，会丢掉失败时的退出码，自动备份脚本据此判断成败
+      app.exit(process.exitCode || 0);
     }
     return;
   }
@@ -264,7 +341,14 @@ app.whenReady().then(async () => {
       await service.saveSettings(config);
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      // 主配置成功、副本失败属于部分成功，界面需要按“已保存但未完全同步”提示
+      return {
+        success: false,
+        partial: error.partial === true,
+        savedPath: error.savedPath,
+        failedPath: error.failedPath,
+        error: error.message,
+      };
     }
   });
 

@@ -96,16 +96,27 @@ function normalizeSource(item) {
   };
 }
 
+function putRecord(db, payload) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.put(payload);
+    req.onsuccess = () => resolve(payload);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 /**
  * 保存设置：先写入 IndexedDB，再双写到 backup.config.json（仅 Electron 环境）。
  *
- * 两份存储必须同时成功，否则脚本备份（run-backup.mjs）会读到旧配置；因此配置文件写入
- * 失败时直接抛错，而不是静默忽略。
+ * 主进程只把主配置文件的成功写入视为成功；配置文件完全没写成功时回滚 IndexedDB，
+ * 避免下次打开界面读到与自动备份脚本不一致的设置。主配置成功而副本失败属于部分成功，
+ * 此时保留 IndexedDB 的新值，并把 partial 标记透传给界面提示。
  *
  * @param {{backupDestination?: string, backupSources?: Array<object>}} record
  * @returns {Promise<{id: string, backupDestination: string, backupSources: Array<object>}>}
  *   实际写入 IndexedDB 的规范化记录
- * @throws {Error} backup.config.json 写入失败时抛出，提示文案带主进程返回的原因
+ * @throws {Error} 配置文件写入失败时抛出；error.partial 为 true 表示主配置已写入
  */
 export async function saveSettingsToIdb(record) {
   const db = await openDb();
@@ -118,14 +129,8 @@ export async function saveSettingsToIdb(record) {
       : [],
   };
 
-  // 先写入 IndexedDB
-  const saved = await new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const req = store.put(payload);
-    req.onsuccess = () => resolve(payload);
-    req.onerror = () => reject(req.error);
-  });
+  const previous = await loadSettingsFromIdb();
+  const saved = await putRecord(db, payload);
 
   // 同时保存到 backup.config.json（仅 Electron 环境）
   if (typeof window !== "undefined" && window.backupApi) {
@@ -134,8 +139,18 @@ export async function saveSettingsToIdb(record) {
       backupDestination: payload.backupDestination,
     };
     const result = await window.backupApi.saveConfig(configData);
-    if (result && result.success === false) {
-      throw new Error(`写入配置文件失败: ${result.error || "未知错误"}`);
+    if (!result || result.success !== true) {
+      const error = new Error(result?.error || "写入配置文件失败: 未知错误");
+      error.partial = result?.partial === true;
+      if (!error.partial) {
+        // 配置文件完全没写成功时回滚 IndexedDB，保持两份存储一致
+        try {
+          await putRecord(db, previous);
+        } catch {
+          // 回滚失败时仍然抛出原始错误，由界面提示用户重新保存
+        }
+      }
+      throw error;
     }
   }
 

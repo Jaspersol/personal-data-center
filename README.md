@@ -29,8 +29,8 @@ Continuous sync tools replicate every mistake within seconds, and backup service
 - **Never archives `node_modules`** — both archivers exclude it, so a JavaScript project doesn't turn into a 2 GB file
 - **Failures are reported per source** — one broken folder doesn't stop the rest; the result list and the exit code tell you which one failed
 - **Headless mode for the Task Scheduler** — `--backup` runs one backup and exits with code 1 if anything failed
-- **A monthly guard script** — `scripts/auto-backup.bat` skips the run when this month already has a log, so a daily scheduled task still backs up once a month
-- **One log file per day** — written next to the executable and shown in the main window
+- **A monthly guard script** — `scripts/auto-backup.bat` skips the month only when a success marker (`logs/backup-success-<yyyy-MM>.log`) exists; the app writes it after every archive was verified, so a month whose backup failed has no marker and is retried on the next run
+- **One log file per day** — written under the app's userData `logs/` directory and shown in the main window
 
 ## Requirements
 
@@ -60,11 +60,11 @@ npm run start
 2. **Back up** — in the main window, tick the sources you want, then click 手动执行备份. Progress and results land in the log panel on the right, and 打开备份路径 opens the destination in Explorer.
 3. **Read the log** — 备份日志 shows today's log file: time, which sources were selected, and per-source success or the failure reason.
 
-Archives are written to `<destination>/<yyyy-MM-dd>/<name>_<yyyyMMdd_HHmmss>.rar` (or `.tar.gz` for WSL sources).
+Archives are written to `<destination>/<yyyy-MM-dd>/<name>_<yyyyMMdd_HHmmssSSS>.rar` (or `.tar.gz` for WSL sources). The timestamp carries milliseconds and a collision check adds a counter, so two runs never overwrite each other; a lock file in the destination serializes manual and scheduled runs.
 
 ## Configuration
 
-Settings live in two places and a save must succeed in both, otherwise the code throws instead of reporting success while `run-backup.mjs` reads a stale file:
+Settings live in two places. The config file is authoritative: a save only reports success once it was written, the IndexedDB record is rolled back if it could not be written, and a failure of the secondary `resources` copy is reported as a partial success instead of “saved”:
 
 - **IndexedDB** (`personal-data-center` → `appSettings`, one record with id `singleton`) — what the windows read and write
 - **`backup.config.json`** — what the headless path and the backup scripts read
@@ -81,7 +81,7 @@ The file uses this shape:
 }
 ```
 
-`sourceFolders` may also be plain strings; the name is then derived from the path. When packaged, the app keeps the writable copy in `%APPDATA%\个人数据中心\backup.config.json` and seeds it from `resources/backup.config.json` on first run — `Program Files` is not writable, so saving there would fail.
+`sourceFolders` may also be plain strings; the name is then derived from the path. When packaged, the app keeps the writable copy in Electron's userData directory (`%APPDATA%\个人数据中心\backup.config.json` in older builds, `%APPDATA%\personal-data-center\backup.config.json` today) and seeds it from `resources/backup.config.json` on first run — `Program Files` is not writable, so saving there would fail. `run-backup.mjs` probes the same userData names when no explicit `--config` is given.
 
 ## Headless & Scheduled Backups
 
@@ -92,7 +92,7 @@ npm run backup
 npm run backup -- --config ./your-config.json
 ```
 
-For a monthly schedule, point the Task Scheduler at `scripts/auto-backup.bat`; it looks for `logs/backup-<yyyy-MM>-*.log` and only runs the backup when this month has none yet.
+For a monthly schedule, point the Task Scheduler at `scripts/auto-backup.bat`; it only skips when the current month has a success marker (`backup-success-<yyyy-MM>.log`). Daily log files, including the ones written by failed runs, no longer count as success.
 
 ## Supported Sources
 
@@ -110,7 +110,7 @@ WSL paths are recognised by their UNC form (`\\wsl$\…`, `\\wsl.localhost\…`)
 ### Backup client
 
 - **Manual run** — tick sources and click once; results show per source, including the archive path or the error
-- **Full log** — time, selected names, and one line per source per run, appended to `<app dir>/logs/backup-yyyy-MM-dd.log`
+- **Full log** — time, selected names, and one line per source per run, appended to `<userData>/logs/backup-yyyy-MM-dd.log`
 - **Path shortcuts** — every source and the destination have an 打开路径 button that opens Explorer at that folder
 - **Two engines** — WinRAR's `rar` for Windows paths, `wsl.exe tar` for paths inside WSL, chosen per source automatically
 
@@ -138,7 +138,7 @@ WinRAR compresses large folders considerably faster than a pure-JS archiver and 
 <details>
 <summary><strong>Where does the backup log go?</strong></summary>
 
-Next to the executable, in `logs/`: a development run uses the repository's `logs/`, a packaged run uses the folder that holds the `.exe`. If that folder isn't writable, the service falls back to `Documents/personal-data-center/logs`.
+In the Electron userData directory (`%APPDATA%\personal-data-center\logs` on Windows), so dev runs, installed builds and portable builds all log to the same stable place. A development run falls back to the repository's `logs/`, a packaged run to `Documents\PersonalDataCenter\logs`, and `%TEMP%` is only the last resort.
 
 </details>
 

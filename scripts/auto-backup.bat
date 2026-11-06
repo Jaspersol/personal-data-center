@@ -3,22 +3,36 @@ setlocal enabledelayedexpansion
 
 chcp 65001 >nul
 
-:: 切换到脚本自身所在目录，保证相对路径有效
+rem Change to this script's directory so relative paths work.
+rem NOTE: keep the comments ASCII-only. cmd.exe reads batch files with the
+rem OEM code page, so UTF-8 Chinese comments can be misread as commands.
 cd /d "%~dp0"
 
-:: 用 PowerShell 获取当前年月（两种格式）
-for /f "delims=" %%a in ('powershell -Command "Get-Date -Format 'yyyyMM'"') do set "CurrentMonth=%%a"
+rem The success marker is written by the app only after every archive was
+rem verified, so a failed month has no marker and will be retried.
+if not defined APPDATA set "APPDATA=%USERPROFILE%\AppData\Roaming"
+
 for /f "delims=" %%a in ('powershell -Command "Get-Date -Format 'yyyy-MM'"') do set "CurrentMonthDash=%%a"
 
-:: 日志目录相对路径（scripts 的上一级是 resources，再上一级是项目根，logs 在根下）
-set "LogDir=..\..\logs"
-
-:: 检查是否存在当月任何日期的备份日志
-if not exist "%LogDir%\backup-%CurrentMonthDash%-*.log" (
-    echo 本月尚未备份，开始执行...
-    node "run-backup.mjs"
-) else (
-    echo 本月已备份（存在 %CurrentMonthDash% 的日志），跳过。
+rem The userData directory name follows the Electron app name, probe each one.
+set "SuccessMarker="
+for %%d in ("PersonalDataCenter" "personal-data-center" "个人数据中心") do (
+    if exist "%APPDATA%\%%~d\logs\backup-success-!CurrentMonthDash!.log" (
+        set "SuccessMarker=%APPDATA%\%%~d\logs\backup-success-!CurrentMonthDash!.log"
+    )
 )
 
-exit
+if defined SuccessMarker (
+    echo 本月（!CurrentMonthDash!）已成功备份，跳过。成功标记: !SuccessMarker!
+    exit /b 0
+)
+
+echo 本月尚未成功备份，开始执行...
+node "run-backup.mjs"
+if errorlevel 1 (
+    echo 备份失败，未生成成功标记，本月下次启动时会重试。
+    exit /b 1
+)
+
+echo 备份成功完成。
+exit /b 0
