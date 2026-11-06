@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "com.personal-data-center.app",
-    "productName": "PDC",
+    "productName": "PersonalDataCenter",
     "copyright": "Copyright © 2026 makabakax",
     "directories": {
       "output": "dist-electron"
@@ -70,6 +70,12 @@
         "portable"
       ],
       "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "mac": {
       "target": [
