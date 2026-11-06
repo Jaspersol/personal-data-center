@@ -1,7 +1,7 @@
 {
   "name": "personal-data-center",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.2",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "com.personal-data-center.app",
-    "productName": "个人数据中心",
+    "productName": "PDC",
     "copyright": "Copyright © 2026 makabakax",
     "directories": {
       "output": "dist-electron"
