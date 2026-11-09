@@ -17,7 +17,7 @@
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
     "build": "npm run build:web && electron-builder",
-    "build:win": "npm run build:web && electron-builder --win",
+    "build:win": "npm run build:web && electron-builder --win --publish never",
     "build:mac": "npm run build:web && electron-builder --mac",
     "build:linux": "npm run build:web && electron-builder --linux"
   },
