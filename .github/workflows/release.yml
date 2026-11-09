@@ -53,11 +53,29 @@ jobs:
             (($lines -join "`n") + "`n"),
             [System.Text.UTF8Encoding]::new($false))
 
+      # The notes come from the repository, one file per tag, so a published
+      # release can be reviewed and corrected like anything else. English is the
+      # default: .github/release-notes/<tag>.md, with .zh-CN.md beside it and
+      # linked from its header. A tag without a file still publishes with the
+      # tag name as its notes, so a missing file cannot block a release.
+      - name: Release notes
+        id: notes
+        shell: bash
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            echo "path=$notes" >> "$GITHUB_OUTPUT"
+          else
+            printf 'Release %s.\n' "${GITHUB_REF_NAME}" > release-notes.md
+            echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
+          name: PersonalDataCenter ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             dist-electron/*-setup.exe
             dist-electron/*-setup.exe.sha256
             dist-electron/SHA256SUMS.txt
             dist-electron/*-portable.exe
-          generate_release_notes: true
