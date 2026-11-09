@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createBackupService } = require("./backup-service.cjs");
+const { createUpdateService, isGithubReleasePage } = require("./update-service.cjs");
 
 // Electron 自身会向 argv 注入启动器路径、应用目录和调试开关。
 // 只跳过这些固定项，不再按 "electron"/".exe" 子串过滤，
@@ -188,9 +189,10 @@ function createMainWindow() {
   loadRenderer(mainWindow, "#/main-view/backup");
 }
 
-function createSettingsWindow() {
+function createSettingsWindow(hash = "#/settings/backup-setting") {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.focus();
+    loadRenderer(settingsWindow, hash);
     return;
   }
 
@@ -206,7 +208,7 @@ function createSettingsWindow() {
     },
   });
   settingsWindow.on("page-title-updated", (e) => e.preventDefault());
-  loadRenderer(settingsWindow, "#/settings/backup-setting");
+  loadRenderer(settingsWindow, hash);
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -326,6 +328,31 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("backup:read-log", async () => service.readBackupLog());
 
+  const updater = createUpdateService({
+    userDataDir: app.getPath("userData"),
+    appVersion: app.getVersion(),
+    emit: (channel, payload) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(channel, payload);
+      }
+    },
+  });
+
+  ipcMain.handle("update:get-version", () => app.getVersion());
+  ipcMain.handle("update:check", () => updater.check());
+  ipcMain.handle("update:last-result", () => updater.lastResult());
+  ipcMain.handle("update:install", async () => {
+    await updater.install();
+    // 让 IPC 先返回成功，界面才能提示「正在安装」，随后退出让安装程序替换文件。
+    setTimeout(() => app.exit(0), 400);
+  });
+  ipcMain.handle("update:open-release-page", async (_, url) => {
+    if (!isGithubReleasePage(url)) throw new Error("只允许打开 GitHub 链接");
+    await shell.openExternal(url);
+  });
+  ipcMain.handle("update:get-auto-check", () => updater.getAutoCheck());
+  ipcMain.handle("update:set-auto-check", (_, enabled) => updater.setAutoCheck(enabled));
+
   const template = [
     {
       label: "",
@@ -333,6 +360,10 @@ app.whenReady().then(async () => {
     {
       label: "设置",
       click: () => createSettingsWindow(),
+    },
+    {
+      label: "关于与更新",
+      click: () => createSettingsWindow("#/settings/update"),
     },
   ];
 
@@ -355,6 +386,27 @@ app.whenReady().then(async () => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
   createMainWindow();
+
+  // 启动时后台自动检查，仅在新版本时通知窗口并弹出系统通知。
+  updater
+    .autoCheck()
+    .then((info) => {
+      if (!info || !info.has_update) return;
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send("update:check-result", info);
+      }
+      if (Notification.isSupported()) {
+        try {
+          new Notification({
+            title: "发现新版本",
+            body: `PersonalDataCenter v${info.latest_version} 已发布，前往「关于与更新」升级`,
+          }).show();
+        } catch (error) {
+          console.error("更新通知失败:", error.message);
+        }
+      }
+    })
+    .catch((error) => console.error("自动检查更新失败:", error.message));
 });
 
 app.on("window-all-closed", () => {

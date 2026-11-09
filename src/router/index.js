@@ -27,6 +27,11 @@ const routes = [
         name: "backupSetting",
         component: () => import("../views/backup/setting.vue"),
       },
+      {
+        path: "update",
+        name: "update",
+        component: () => import("../views/settings/update.vue"),
+      },
     ],
   },
 ];

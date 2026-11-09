@@ -126,6 +126,13 @@ WSL 路径靠 UNC 形式（`\\wsl$\…`、`\\wsl.localhost\…`）或「Linux �
 - **electron-builder** —— Windows 出 `nsis` + `portable`，macOS 出 `dmg` + `zip`，Linux 出 `AppImage` + `deb` + `rpm`，产物在 `dist-electron/`
 - **脚本随包分发** —— `scripts/` 与 `backup.config.json` 作为额外资源打进安装包，装机后定时备份仍可用
 
+### 检查更新
+
+- **检查** —— 「设置 → 关于与更新 → 检查更新」通过 GitHub REST API 读取 `Jaspersol/personal-data-center` 的最新 Release，与当前版本比较并展示更新说明。若 API 被限流或不可达，会自动切换到直链方案：从 `releases/latest` 的重定向里读出版本 tag，从 Release 的 `SHA256SUMS.txt` 里读出安装包名与 SHA256。该路径完全不访问 `api.github.com`，不消耗 API 配额。
+- **安装** —— 仅通过 HTTPS 从允许的 GitHub 域名下载 NSIS 安装包（每个重定向目标都会校验），必须有已发布的 SHA256 校验值，下载后校验体积、`MZ` 头与摘要，再以 `/S --force-run --updated` 静默运行；应用退出，安装完成后安装程序会重新打开它。没有校验值的版本一律拒绝安装。
+- **自动检查** —— 启动时检查一次，最多每 6 小时一次，可在「设置 → 关于与更新」中关闭。
+- **发布** —— 修改 `package.json` 版本号、打 `vX.Y.Z` 标签并推送。Release 工作流构建 Windows 安装包，并同时发布 `<setup>.exe.sha256`（API 主路径）与 `SHA256SUMS.txt`（直链兜底）。未配置代码签名与 Authenticode 校验。
+
 ## 常见问题
 
 <details>

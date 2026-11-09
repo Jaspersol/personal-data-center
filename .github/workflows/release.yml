@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check tag matches app version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          app_version=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$app_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $app_version" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm run build:win
+
+      # The in-app updater refuses to install without a published checksum.
+      # Publish both forms the updater understands:
+      #   - "<setup>.exe.sha256"  read by the primary GitHub API check
+      #   - "SHA256SUMS.txt"      read by the no-API direct-link fallback check
+      - name: Generate installer checksums
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem dist-electron/*-setup.exe)
+          if ($installers.Count -eq 0) { throw "No NSIS installer found in dist-electron" }
+          $lines = foreach ($installer in $installers) {
+            $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash *$($installer.Name)" | Out-File -FilePath "$($installer.FullName).sha256" -Encoding ascii
+            "$hash  $($installer.Name)"
+          }
+          # LF endings, no BOM: the fallback parser splits on \n, and a trailing
+          # \r would stick to the installer name and break the .exe match.
+          [System.IO.File]::WriteAllText(
+            'dist-electron/SHA256SUMS.txt',
+            (($lines -join "`n") + "`n"),
+            [System.Text.UTF8Encoding]::new($false))
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-electron/*-setup.exe
+            dist-electron/*-setup.exe.sha256
+            dist-electron/SHA256SUMS.txt
+            dist-electron/*-portable.exe
+          generate_release_notes: true

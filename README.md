@@ -126,6 +126,13 @@ WSL paths are recognised by their UNC form (`\\wsl$\…`, `\\wsl.localhost\…`)
 - **electron-builder** — `nsis` + `portable` on Windows, `dmg` + `zip` on macOS, `AppImage` + `deb` + `rpm` on Linux, output in `dist-electron/`
 - **Scripts shipped** — `scripts/` and `backup.config.json` are copied into the package as extra resources, so the scheduled path works on an installed copy
 
+### Updates
+
+- **Check** — 设置 → 关于与更新 → 检查更新 reads the latest GitHub Release of `Jaspersol/personal-data-center` through the GitHub REST API, compares it with the running version, and shows the release notes. If the API is rate-limited or unreachable, the check automatically falls back to a direct-link scheme: the version tag comes from the `releases/latest` redirect, and the installer name + SHA256 come from the release's `SHA256SUMS.txt`. That path never touches `api.github.com`, so no API quota is consumed.
+- **Install** — downloads the NSIS installer over HTTPS (only GitHub hosts are accepted, including every redirect target), requires a published SHA256 checksum, verifies the file (size cap, `MZ` header, digest), then runs it silently with `/S --force-run --updated`. The app exits and the installer restarts it. A release without a checksum is never installed.
+- **Automatic checks** — once on startup, at most every 6 hours; can be turned off in 设置 → 关于与更新.
+- **Releasing** — bump `package.json`, tag `vX.Y.Z`, push. The Release workflow builds the Windows installer and publishes `<setup>.exe.sha256` (API path) and `SHA256SUMS.txt` (direct-link fallback) alongside it. Code signing and Authenticode verification are not configured.
+
 ## FAQ
 
 <details>
